@@ -5,9 +5,9 @@ Jede Card zeigt ein Diagramm (ECharts) oder eine Tabelle (TanStack) auf Basis ec
 Zeitreihen aus einer bestehenden **InfluxDB**. Fokus: Daten elegant, modern und
 datengetrieben darstellen.
 
-> **Status:** In Aufbau — Iteration 1 (Walking Skeleton). Umfang und Erfolgskriterien
-> stehen in [`SPEC.md`](./SPEC.md). Die unten genannten Befehle greifen, sobald das
-> Grundgerüst gemäß Spec gescaffoldet ist.
+> **Status:** Iteration 1 (Walking Skeleton) ✅ abgeschlossen & verifiziert.
+> Umfang & Erfolgskriterien je Iteration als eigenes Dokument unter
+> [`docs/iterations/`](./docs/iterations/).
 
 ## Tech-Stack
 
@@ -67,4 +67,5 @@ fragt sie **serverseitig** ab (Token bleibt im Backend, nie im Browser). Konfigu
 
 ## Doku
 
-- [`SPEC.md`](./SPEC.md) — Spezifikation & Erfolgskriterien der aktuellen Iteration.
+- [`docs/iterations/`](./docs/iterations/) — je Iteration eine Spec (Scope + Erfolgskriterien);
+  aktiv = höchste Nummer mit `Status: aktiv`.

@@ -15,7 +15,7 @@ docker-compose.override.yml
 .claude
 sandbox
 README.md
-SPEC.md
+docs
 AGENTS.md
 CLAUDE.md
 coverage

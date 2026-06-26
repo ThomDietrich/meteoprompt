@@ -1,7 +1,10 @@
-# SPEC.md — wetter-chat · Iteration 1 (Walking Skeleton)
+# Iteration 1 — Walking Skeleton
 
-> Diese Spec beschreibt **genau eine** Loop-Iteration. Sie ist der Bezugsrahmen für die
-> anschließende `/goal`-Execution. Scope bewusst klein gehalten: ein lauffähiges
+> **Status:** ✅ abgeschlossen & verifiziert — Commit `5b15f33`. Gate A grün
+> (typecheck + build exit 0), Gate B per Playwright + Live-Token bestätigt
+> (628 Punkte, Card rendert echte Daten, Drag + Resize mit Chart-Reflow).
+>
+> Diese Iteration beschreibt **genau einen** Loop-Durchgang: das lauffähige
 > Grundgerüst mit einer echten, datengetriebenen Card.
 
 ---
@@ -202,7 +205,7 @@ wetter-chat/
 │  │  └─ charts/temperature-card.tsx  # "use client", ECharts + ResizeObserver
 │  └─ lib/
 │     └─ influx.ts         # InfluxDB-Client + Query-Helper (server-only)
-└─ SPEC.md
+└─ docs/iterations/2026-06-26_spec-01_walking-skeleton.md   # diese Spec
 ```
 
 ---

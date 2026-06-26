@@ -12,7 +12,9 @@ Chat-Assistent ist ein geplanter späterer Aspekt, nicht Teil der frühen Iterat
 ## Arbeitsweise (Methode)
 - **Agent-first, loop-getrieben.** Der Mensch ist Orchestrator: schreibt die Spec, definiert
   das Erfolgs-/Verifikations-Gate, reviewt. Agenten führen aus.
-- **Scope + Erfolgskriterien der aktuellen Iteration stehen in [`SPEC.md`](./SPEC.md) — zuerst lesen.**
+- **Scope + Erfolgskriterien jeder Iteration liegen als eigenes Dokument unter
+  [`docs/iterations/`](./docs/iterations/)** (`YYYY-MM-DD_spec-NN_<slug>.md`, datiert + fortlaufend).
+  **Aktiv** = die Iteration mit `Status: aktiv` (i. d. R. die höchstnummerierte) — die zuerst lesen.
 - **Niemals selbst abnehmen.** Schreiben und Verifizieren sind getrennte Durchgänge. Fertig =
   erst wenn das Gate mit Belegen grün ist.
 
@@ -44,6 +46,9 @@ docker compose run --rm web npm run build
 Build/Typecheck dürfen **keine** DB-Verbindung brauchen (Daten erst zur Laufzeit).
 
 ## Konventionen
-- Root-Meta-Dokumente GROSS (`SPEC.md`, `README.md`, `AGENTS.md`).
+- Root-Meta-Dokumente GROSS (`README.md`, `AGENTS.md`).
+- **Iterationen:** je ein Dokument `docs/iterations/YYYY-MM-DD_spec-NN_<slug>.md` — ISO-Start-Datum
+  + `spec-NN` (nullgepaddete laufende Nummer) + Kurz-Slug. Jedes trägt oben eine `Status:`-Zeile
+  (`geplant` · `aktiv` · `abgeschlossen [+ Commit]`). **Kein** rollierendes `SPEC.md`.
 - Referenz-/Hintergrund-Doku gehört nach `docs/`.
 - **Nur committen, wenn der Mensch es verlangt.**
