@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+/* react-grid-layout drag/resize visuals — required for handles to render. */
+@import "react-grid-layout/css/styles.css";
+@import "react-resizable/css/styles.css";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+}
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0b1120;
+    --foreground: #e2e8f0;
+  }
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+}
+
+/* Make the resize handle a touch more visible against card backgrounds. */
+.react-grid-item > .react-resizable-handle {
+  z-index: 10;
+}
