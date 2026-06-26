@@ -27,11 +27,22 @@ import {
 /** Model for tool-use (spec-02 §6: fast, cheap, strong tool-use). */
 const MODEL = "claude-sonnet-4-6";
 
+/**
+ * Why a query couldn't be answered as a chart. The route maps each to a
+ * representative German message (spec-03 §7). `unmappable` is the fallback.
+ */
+export type UnmappableReason =
+  | "record" // record/extreme/aggregate ("wann war der kälteste …") — spec-05
+  | "out_of_scope" // forecast/radar/external data we don't have
+  | "unmappable"; // gibberish / off-topic / no catalog match
+
 /** Raised on unmappable / invalid model output → route maps to HTTP 422. */
 export class UnmappableQueryError extends Error {
-  constructor(message: string) {
+  reason: UnmappableReason;
+  constructor(reason: UnmappableReason, message: string) {
     super(message);
     this.name = "UnmappableQueryError";
+    this.reason = reason;
   }
 }
 
@@ -59,10 +70,14 @@ const QUERY_SPEC_TOOL: Anthropic.Tool = {
     type: "object",
     additionalProperties: false,
     properties: {
-      unmappable: {
-        type: "boolean",
+      reason: {
+        type: "string",
+        enum: ["ok", "record", "out_of_scope", "unmappable"],
         description:
-          "Set true (and return an empty charts array) when the input cannot be mapped to any catalog metric — gibberish, off-topic, or no matching weather quantity.",
+          "Classify the request. 'ok' = a normal time-series request (fill charts). " +
+          "'record' = a record/extreme/aggregate/scalar question (e.g. WANN war es am kältesten/wärmsten, höchster/niedrigster Wert, an welchem Tag/Zeitpunkt, Durchschnitt/Summe als EINE Zahl) — these are NOT yet supported, so DO NOT force a chart; return empty charts. " +
+          "'out_of_scope' = forecast, radar, warnings, or any data NOT in our own station history (we only have past measurements from this station) — return empty charts. " +
+          "'unmappable' = gibberish, off-topic, or no matching catalog metric — return empty charts.",
       },
       charts: {
         type: "array",
@@ -142,7 +157,7 @@ const QUERY_SPEC_TOOL: Anthropic.Tool = {
         },
       },
     },
-    required: ["charts"],
+    required: ["reason", "charts"],
   },
 };
 
@@ -169,9 +184,19 @@ DIAGRAMMWAHL-REGELN:
 - ⚑ Akkumulator-Metriken (rainfall, evapotranspiration): aggregation 'sum' verwenden (Backend rechnet korrekt via difference+sum).
 
 ZEITRÄUME: relative Flux-Dauern wie -7d, -28d, -1d, -3d; stop üblicherweise 'now'.
-NICHT-ZUORDENBAR: Wenn die Eingabe Kauderwelsch ist, nichts mit Wetter zu tun hat oder zu keiner
-Katalog-Metrik passt, setze "unmappable": true und gib ein LEERES "charts"-Array zurück. Erfinde
-KEINE Default-Metrik (z. B. nicht einfach Außentemperatur). Im Zweifel lieber unmappable als raten.
+
+KLASSIFIZIERUNG (Feld "reason", IMMER setzen):
+- "ok": normale Zeitreihen-Anfrage (z. B. "Außentemperatur letzte Woche", "Regen heute") → charts füllen.
+- "record": Rekord-/Extrem-/Aggregat-/Skalar-Frage — z. B. "WANN war es am kältesten/wärmsten",
+  "höchster/niedrigster Wert", "an welchem Tag/Zeitpunkt", "Durchschnitt/Summe als EINE Zahl".
+  Solche Fragen sind NOCH NICHT unterstützt → KEIN Diagramm erzwingen, LEERES "charts"-Array.
+  Mappe diese NIEMALS auf eine Metrik-Zeitreihe (also NICHT einfach Min-Temperatur als Linie zeichnen).
+- "out_of_scope": Vorhersage, Radar, Warnungen oder Fremddaten — wir haben NUR die eigene
+  Stationshistorie (vergangene Messwerte). → LEERES "charts"-Array.
+- "unmappable": Kauderwelsch, off-topic oder keine passende Katalog-Metrik. → LEERES "charts"-Array.
+
+Bei "record"/"out_of_scope"/"unmappable" KEINE Default-Metrik erfinden. Im Zweifel zwischen "ok"
+und "record": wenn nach einem ZEITPUNKT oder EINEM EINZELWERT/Extrem gefragt wird → "record".
 Wähle einen prägnanten deutschen Titel und Labels. Antworte NUR über den Tool-Aufruf.`;
 }
 
@@ -185,14 +210,14 @@ function validateAggregation(v: unknown): Aggregation {
   if (typeof v === "string" && (AGGREGATIONS as readonly string[]).includes(v)) {
     return v as Aggregation;
   }
-  throw new UnmappableQueryError(`Invalid aggregation: ${String(v)}`);
+  throw new UnmappableQueryError("unmappable", `Invalid aggregation: ${String(v)}`);
 }
 
 function validateChartType(v: unknown): ChartType {
   if (typeof v === "string" && (V2_CHART_TYPES as readonly string[]).includes(v)) {
     return v as ChartType;
   }
-  throw new UnmappableQueryError(`Invalid chart type: ${String(v)}`);
+  throw new UnmappableQueryError("unmappable", `Invalid chart type: ${String(v)}`);
 }
 
 function validateRole(v: unknown): SeriesRole | undefined {
@@ -200,18 +225,18 @@ function validateRole(v: unknown): SeriesRole | undefined {
   if (typeof v === "string" && (SERIES_ROLES as readonly string[]).includes(v)) {
     return v as SeriesRole;
   }
-  throw new UnmappableQueryError(`Invalid series role: ${String(v)}`);
+  throw new UnmappableQueryError("unmappable", `Invalid series role: ${String(v)}`);
 }
 
 function validateSeries(raw: unknown, chartIdx: number, seriesIdx: number): Series {
   if (typeof raw !== "object" || raw === null) {
-    throw new UnmappableQueryError("Series is not an object");
+    throw new UnmappableQueryError("unmappable", "Series is not an object");
   }
   const r = raw as Record<string, unknown>;
 
   const metric = asString(r.metric);
   if (!metric || !getByKey(metric)) {
-    throw new UnmappableQueryError(`Unknown metric: ${String(r.metric)}`);
+    throw new UnmappableQueryError("unmappable", `Unknown metric: ${String(r.metric)}`);
   }
 
   const cat = getByKey(metric)!;
@@ -233,7 +258,7 @@ function validateSeries(raw: unknown, chartIdx: number, seriesIdx: number): Seri
 
 function validateChart(raw: unknown, idx: number): ChartSpec {
   if (typeof raw !== "object" || raw === null) {
-    throw new UnmappableQueryError("Chart is not an object");
+    throw new UnmappableQueryError("unmappable", "Chart is not an object");
   }
   const r = raw as Record<string, unknown>;
 
@@ -246,7 +271,7 @@ function validateChart(raw: unknown, idx: number): ChartSpec {
 
   const seriesRaw = Array.isArray(r.series) ? r.series : [];
   if (seriesRaw.length === 0) {
-    throw new UnmappableQueryError("Chart has no series");
+    throw new UnmappableQueryError("unmappable", "Chart has no series");
   }
   const series = seriesRaw.map((s, si) => validateSeries(s, idx, si));
 
@@ -261,16 +286,26 @@ function validateChart(raw: unknown, idx: number): ChartSpec {
 
 function validateQuerySpec(input: unknown, query: string): QuerySpec {
   if (typeof input !== "object" || input === null) {
-    throw new UnmappableQueryError("Tool output is not an object");
+    throw new UnmappableQueryError("unmappable", "Tool output is not an object");
   }
   const r = input as Record<string, unknown>;
-  // Claude signalled it couldn't map the input, or returned no charts.
-  if (r.unmappable === true) {
-    throw new UnmappableQueryError("Model flagged the input as unmappable");
+
+  // Claude classified the request. Anything but "ok" → no chart, a 422 with the
+  // matching message. (Also handles legacy `unmappable:true`.)
+  const reason = typeof r.reason === "string" ? r.reason : undefined;
+  if (reason === "record") {
+    throw new UnmappableQueryError("record", "Record/aggregate query");
   }
+  if (reason === "out_of_scope") {
+    throw new UnmappableQueryError("out_of_scope", "Out-of-scope query");
+  }
+  if (reason === "unmappable" || r.unmappable === true) {
+    throw new UnmappableQueryError("unmappable", "Unmappable query");
+  }
+
   const chartsRaw = Array.isArray(r.charts) ? r.charts : [];
   if (chartsRaw.length === 0) {
-    throw new UnmappableQueryError("No charts in tool output");
+    throw new UnmappableQueryError("unmappable", "No charts in tool output");
   }
   const charts = chartsRaw.map((c, i) => validateChart(c, i));
   return { version: 1, query, charts };
@@ -302,6 +337,7 @@ export async function deriveQuerySpec(query: string): Promise<QuerySpec> {
 
   if (!toolUse) {
     throw new UnmappableQueryError(
+      "unmappable",
       "Claude did not return a structured query for this input.",
     );
   }

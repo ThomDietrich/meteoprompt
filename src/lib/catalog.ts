@@ -140,3 +140,14 @@ export function getBySynonym(token: string): CatalogEntry | undefined {
 export function catalogKeys(): string[] {
   return [...BY_KEY.keys()];
 }
+
+/** 8-point German compass abbreviations, clockwise from North. */
+const COMPASS_8 = ["N", "NO", "O", "SO", "S", "SW", "W", "NW"] as const;
+
+/** Map a wind-direction degree (0–360, 0 = N) to a German compass abbreviation. */
+export function degreesToCompass(deg: number): string {
+  const normalized = ((deg % 360) + 360) % 360;
+  // Each sector spans 45°, centered on its compass point (N = -22.5..22.5).
+  const idx = Math.floor(((normalized + 22.5) % 360) / 45);
+  return COMPASS_8[idx];
+}

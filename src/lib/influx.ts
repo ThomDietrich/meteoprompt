@@ -76,3 +76,30 @@ export async function runFluxPoints(flux: string): Promise<SeriesPoint[]> {
 
   return points;
 }
+
+export type EntityRow = { entityId: string; t: string; v: number };
+
+/**
+ * Run a Flux query and collect `(entity_id, _time, _value)` rows. Used by the
+ * `/api/now` last()-per-entity query so a single query covers all 12 metrics.
+ */
+export async function runFluxEntityRows(flux: string): Promise<EntityRow[]> {
+  const queryApi = getQueryApi();
+  const rows: EntityRow[] = [];
+
+  for await (const { values, tableMeta } of queryApi.iterateRows(flux)) {
+    const row = tableMeta.toObject(values) as {
+      entity_id?: string;
+      _time?: string;
+      _value?: number | null;
+    };
+
+    if (row.entity_id == null || row._time == null || row._value == null) {
+      continue;
+    }
+
+    rows.push({ entityId: row.entity_id, t: row._time, v: row._value });
+  }
+
+  return rows;
+}

@@ -34,12 +34,15 @@ export async function POST(request: Request) {
     charts = spec.charts;
   } catch (error) {
     if (error instanceof UnmappableQueryError) {
+      // Representative, honest message per category (spec-03 §7).
+      const detail =
+        error.reason === "record"
+          ? "Solche Rekord-/Extrem-Fragen (z. B. „wann war es am kältesten“) kann ich noch nicht beantworten — das kommt in einer späteren Ausbaustufe."
+          : error.reason === "out_of_scope"
+            ? "Dazu habe ich keine Daten — ich kenne nur die Historie der eigenen Wetterstation (keine Vorhersage, kein Radar, keine Fremddaten)."
+            : "Konnte die Anfrage nicht zuordnen — bitte präzisieren (z. B. „Außentemperatur der letzten 7 Tage“).";
       return NextResponse.json(
-        {
-          error: "unmappable_query",
-          detail:
-            "Konnte die Anfrage nicht zuordnen — bitte präzisieren (z. B. „Außentemperatur der letzten 7 Tage“).",
-        },
+        { error: "unmappable_query", reason: error.reason, detail },
         { status: 422 },
       );
     }

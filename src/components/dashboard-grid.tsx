@@ -10,6 +10,7 @@ import {
 } from "react-grid-layout";
 
 import { ChartCard } from "@/components/cards/chart-card";
+import { SkeletonCard } from "@/components/cards/skeleton-card";
 import { SearchBox } from "@/components/search-box";
 import {
   loadCards,
@@ -18,6 +19,13 @@ import {
   type StoredCard,
 } from "@/lib/card-store";
 import type { AskResponse } from "@/lib/query-spec";
+
+/** A transient skeleton placeholder shown while /api/ask is in flight. */
+interface PendingCard {
+  id: string;
+  originQuery: string;
+  layout: CardLayout;
+}
 
 /**
  * Dashboard orchestrator (client-only).
@@ -121,6 +129,7 @@ export default function DashboardGrid() {
   const { width, ref: containerRef, ready } = useMeasuredWidth();
 
   const [cards, setCards] = useState<StoredCard[]>([]);
+  const [pendingCards, setPendingCards] = useState<PendingCard[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -138,11 +147,26 @@ export default function DashboardGrid() {
     saveCards(next);
   }, []);
 
-  // Submit free text → /api/ask → append a card per returned ChartSpec.
+  // Submit free text → show a skeleton immediately → /api/ask → replace the
+  // skeleton with the returned card(s), or remove it and surface the error.
   const handleSubmit = useCallback(
     async (query: string) => {
       setPending(true);
       setError(null);
+
+      // Insert a skeleton placeholder right away (spec §6).
+      const skeletonId = `skeleton-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 7)}`;
+      const skeletonLayout = nextLayoutPosition(cards);
+      setPendingCards((prev) => [
+        ...prev,
+        { id: skeletonId, originQuery: query, layout: skeletonLayout },
+      ]);
+
+      const dropSkeleton = () =>
+        setPendingCards((prev) => prev.filter((p) => p.id !== skeletonId));
+
       try {
         const res = await fetch("/api/ask", {
           method: "POST",
@@ -161,6 +185,8 @@ export default function DashboardGrid() {
         }
         const data = (await res.json()) as AskResponse;
 
+        // Replace the skeleton with the real cards atomically.
+        dropSkeleton();
         setCards((prev) => {
           const additions: StoredCard[] = [];
           for (const chart of data.charts) {
@@ -181,12 +207,13 @@ export default function DashboardGrid() {
           return next;
         });
       } catch (e) {
+        dropSkeleton();
         setError(e instanceof Error ? e.message : "Unbekannter Fehler");
       } finally {
         setPending(false);
       }
     },
-    [persist],
+    [persist, cards],
   );
 
   const handleRemove = useCallback(
@@ -234,8 +261,10 @@ export default function DashboardGrid() {
     [persist],
   );
 
-  // Empty state: centered hero search box only.
-  if (cards.length === 0) {
+  // Empty state: centered hero search box only — but keep showing it while a
+  // first skeleton is pending so the placeholder appears, and the hero shows
+  // any error (errors must be visible in every state, spec §7).
+  if (cards.length === 0 && pendingCards.length === 0) {
     return (
       <div ref={containerRef} className="w-full">
         <SearchBox
@@ -248,7 +277,21 @@ export default function DashboardGrid() {
     );
   }
 
-  const layoutItems = toLayoutItems(cards);
+  // Layout items for real cards + transient skeletons. Skeletons are not
+  // draggable (no drag handle) and never persisted.
+  const layoutItems: LayoutItem[] = [
+    ...toLayoutItems(cards),
+    ...pendingCards.map((p) => ({
+      i: p.id,
+      x: p.layout.x,
+      y: p.layout.y,
+      w: p.layout.w,
+      h: p.layout.h,
+      minW: DEFAULT_SIZE.minW,
+      minH: DEFAULT_SIZE.minH,
+      static: true,
+    })),
+  ];
   const layouts: ResponsiveLayouts = {
     lg: layoutItems,
     md: layoutItems,
@@ -287,6 +330,11 @@ export default function DashboardGrid() {
                 originQuery={card.originQuery}
                 onRemove={() => handleRemove(card.id)}
               />
+            </div>
+          ))}
+          {pendingCards.map((p) => (
+            <div key={p.id} className="flex">
+              <SkeletonCard originQuery={p.originQuery} />
             </div>
           ))}
         </ResponsiveGridLayout>

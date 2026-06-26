@@ -1,7 +1,16 @@
 import "server-only";
 
-import { getByKey, type CatalogEntry } from "@/lib/catalog";
-import { influxBucket, runFluxPoints } from "@/lib/influx";
+import {
+  degreesToCompass,
+  getByKey,
+  type CatalogEntry,
+} from "@/lib/catalog";
+import {
+  influxBucket,
+  runFluxEntityRows,
+  runFluxPoints,
+} from "@/lib/influx";
+import { KENNWERTE, type KennwertValue } from "@/lib/kennwerte";
 import type {
   ChartSpec,
   ResolvedSeries,
@@ -148,4 +157,84 @@ export async function resolveChartSeries(
   );
 
   return resolved;
+}
+
+// ── Kennwerte (live values for the header row, spec-03 §4) ──────────────────
+
+/**
+ * Resolve the 12 Kennwerte: one `last()`-per-entity query for the "latest"
+ * metrics (whitelist of catalog entityIds), plus a daily-max query for
+ * "Regen heute" (today's accumulator). Returns one value per KENNWERTE entry.
+ */
+export async function resolveKennwerte(): Promise<KennwertValue[]> {
+  const bucket = influxBucket();
+
+  // Whitelist of entityIds for the "latest" metrics (resolved via catalog).
+  const latestDefs = KENNWERTE.filter((k) => k.aggregation === "latest");
+  const entityToDef = new Map<string, (typeof KENNWERTE)[number]>();
+  for (const def of latestDefs) {
+    const cat = getByKey(def.key);
+    if (cat) entityToDef.set(cat.entityId, def);
+  }
+  const entityIds = [...entityToDef.keys()];
+
+  // ONE Flux query: last() per entity over the whitelist (regex on entity_id).
+  const orRegex = entityIds.map((e) => `^${e}$`).join("|");
+  const latestFlux = `from(bucket: "${bucket}")
+  |> range(start: -6h)
+  |> filter(fn: (r) => r["_field"] == "value")
+  |> filter(fn: (r) => r["entity_id"] =~ /${orRegex}/)
+  |> last()
+  |> keep(columns: ["entity_id", "_time", "_value"])`;
+
+  const latestRows = await runFluxEntityRows(latestFlux);
+  const latestByEntity = new Map(latestRows.map((r) => [r.entityId, r]));
+
+  // "Regen heute" = today's daily-max of the rain accumulator (dayrain_mm).
+  let rainTodayValue: number | null = null;
+  let rainTodayTime: string | null = null;
+  const rainDef = KENNWERTE.find((k) => k.aggregation === "rainToday");
+  const rainCat = rainDef ? getByKey(rainDef.key) : undefined;
+  if (rainCat) {
+    const rainFlux = `from(bucket: "${bucket}")
+  |> range(start: today())
+  |> filter(fn: (r) => r["entity_id"] == "${rainCat.entityId}")
+  |> filter(fn: (r) => r["_field"] == "value")
+  |> max()
+  |> keep(columns: ["_time", "_value"])`;
+    const rainPoints = await runFluxPoints(rainFlux);
+    if (rainPoints.length > 0) {
+      rainTodayValue = rainPoints[0].v;
+      rainTodayTime = rainPoints[0].t;
+    }
+  }
+
+  // Assemble in KENNWERTE order.
+  return KENNWERTE.map((def): KennwertValue => {
+    const cat = getByKey(def.key);
+    const unit = cat?.unit ?? "";
+
+    if (def.aggregation === "rainToday") {
+      return {
+        key: def.key,
+        label: def.label,
+        unit,
+        value: rainTodayValue,
+        t: rainTodayTime,
+      };
+    }
+
+    const row = cat ? latestByEntity.get(cat.entityId) : undefined;
+    const value = row?.v ?? null;
+    return {
+      key: def.key,
+      label: def.label,
+      unit,
+      value,
+      t: row?.t ?? null,
+      ...(def.compass && value != null
+        ? { compass: degreesToCompass(value) }
+        : {}),
+    };
+  });
 }

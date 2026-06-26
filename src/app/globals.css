@@ -4,20 +4,71 @@
 @import "react-grid-layout/css/styles.css";
 @import "react-resizable/css/styles.css";
 
+/*
+ * Wappen-Palette (Gemeinde) as Tailwind v4 @theme tokens (CSS-first; no
+ * tailwind.config.js). Exposed as utilities like bg-brand-blue, text-brand-gold.
+ * See docs/iterations spec-03 §3.
+ */
+@theme {
+  --color-brand-blue: #1f5ba8;
+  --color-brand-gold: #f2a81c;
+  --color-brand-green: #2e9d46;
+  --color-brand-ink: #1a1a1a;
+  --color-brand-field: #f7f9fc;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
 }
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  /* Page background uses the off-white Wappen field colour. */
+  --background: #f7f9fc;
+  --foreground: #1a1a1a;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0b1120;
     --foreground: #e2e8f0;
+  }
+}
+
+/* Shimmer sweep for skeleton placeholders (spec-03 §6). */
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.55),
+    transparent
+  );
+  animation: shimmer 1.4s infinite;
+}
+
+@media (prefers-color-scheme: dark) {
+  .shimmer::after {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.08),
+      transparent
+    );
   }
 }
 
