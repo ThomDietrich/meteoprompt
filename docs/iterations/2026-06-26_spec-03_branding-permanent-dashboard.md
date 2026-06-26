@@ -1,6 +1,9 @@
 # Iteration 3 — Branding + permanentes Dashboard („Rahmen")
 
-> **Status:** 🟢 aktiv — Spec festgelegt 2026-06-26. Erste von drei Phasen des
+> **Status:** ✅ abgeschlossen — Commit `b14cf22` (2026-06-26). Gate A grün + Gate B
+> per Playwright (beide Keys) verifiziert: Wappen-Header/Footer, 12 Kennwert-Pills,
+> „STATIONS-DASHBOARD"-Trennlinie, 10 feste Charts mit echten Daten, Skeleton-Shimmer,
+> sichtbare Fehlermeldungen (Rekord/Out-of-Scope) im Card-Zustand. Erste von drei Phasen des
 > Iteration-3-Programms:
 > **03 „Rahmen"** (dieses Doc) → **04 „Vielfalt"** (Diagrammtypen+Farben) →
 > **05 „Intelligenz"** (Rekord/Aggregat/Vergleich + `derived`).
