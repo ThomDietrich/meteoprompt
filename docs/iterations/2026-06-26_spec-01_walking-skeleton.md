@@ -115,20 +115,25 @@ Flux-Query unten wurde per MCP gegen die echte DB verifiziert.)
 | Host        | `your-influxdb-host` |
 | Org         | `your-org` |
 | Bucket      | `your-bucket` |
-| entity_id   | `garten_ventus_w830_outdoor_temperature` |
+| entity_id   | `weather_station_outtemp_c` |
 | _field      | `value` |
 | _measurement| `°C` (= Einheit, Home-Assistant-Konvention) |
 | weitere Tags| `domain=sensor` |
 
-**Verifizierte Stichprobe (letzte 28 Tage):** 19.614 Rohpunkte (~alle 2 min),
-Stunden-Mittel ≈ 672 Punkte; Wertebereich 4,6 – 36,4 °C, Mittel 20,8 °C; aktuell bis jetzt.
+**Verifizierte Stichprobe (letzte 28 Tage):** ~672 Stunden-Mittel-Punkte;
+Wertebereich ~4,6 – 36,4 °C; aktuell bis jetzt.
+
+> **Korrektur (2026-06-26):** Entity auf die **kanonische** Station `weather_station_outtemp_c`
+> umgestellt — das frühere `garten_ventus_w830_…` ist ein lückenhaftes Duplikat (kürzere
+> Historie). Momentanwerte identisch, Historie reicht zurück bis **2021-10-18**.
+> Hintergrund: [`docs/data-quality-influxdb.md`](../data-quality-influxdb.md).
 
 **Flux-Query der App** (Stunden-Mittel über 4 Wochen, ~672 Punkte → ideal fürs Liniendiagramm):
 
 ```flux
 from(bucket: "your-bucket")
   |> range(start: -28d)
-  |> filter(fn: (r) => r["entity_id"] == "garten_ventus_w830_outdoor_temperature")
+  |> filter(fn: (r) => r["entity_id"] == "weather_station_outtemp_c")
   |> filter(fn: (r) => r["_field"] == "value")
   |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
   |> yield(name: "mean")
@@ -138,7 +143,7 @@ from(bucket: "your-bucket")
 ```json
 {
   "unit": "°C",
-  "entity": "garten_ventus_w830_outdoor_temperature",
+  "entity": "weather_station_outtemp_c",
   "points": [ { "t": "2026-05-29T10:00:00Z", "v": 22.54 }, ... ]
 }
 ```
