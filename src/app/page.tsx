@@ -17,10 +17,10 @@ const DashboardGrid = dynamic(
 export default function Home() {
   return (
     <main className="mx-auto max-w-7xl p-4 sm:p-6">
-      <header className="mb-6">
+      <header className="mb-4">
         <h1 className="text-xl font-semibold tracking-tight">wetter-chat</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Wetter-Dashboard · Iteration 1
+          Wetter-Dashboard · Freitext-Abfrage
         </p>
       </header>
       <DashboardGrid />

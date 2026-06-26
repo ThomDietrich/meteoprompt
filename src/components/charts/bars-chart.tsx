@@ -1,0 +1,58 @@
+"use client";
+
+import { forwardRef } from "react";
+import ReactECharts from "echarts-for-react";
+import type { EChartsOption } from "echarts";
+import type EChartsReact from "echarts-for-react";
+
+import type { ResolvedSeries } from "@/lib/query-spec";
+
+/**
+ * Bars renderer — one bar series per resolved series, on a time x-axis. Used for
+ * sums-per-window (rainfall, windrun, evapotranspiration).
+ */
+
+function buildOption(series: ResolvedSeries[]): EChartsOption {
+  const unit = series[0]?.unit ?? "";
+
+  return {
+    grid: { top: 28, right: 16, bottom: 32, left: 48 },
+    legend:
+      series.length > 1
+        ? { top: 0, type: "scroll", textStyle: { fontSize: 11 } }
+        : undefined,
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "shadow" },
+      valueFormatter: (value) =>
+        typeof value === "number" ? `${value.toFixed(1)} ${unit}` : String(value),
+    },
+    xAxis: { type: "time" },
+    yAxis: {
+      type: "value",
+      scale: false,
+      min: 0,
+      axisLabel: { formatter: `{value} ${unit}` },
+    },
+    series: series.map((s) => ({
+      name: s.label,
+      type: "bar" as const,
+      data: s.points.map((p) => [p.t, p.v] as [string, number]),
+      barMaxWidth: 24,
+    })),
+  };
+}
+
+export const BarsChart = forwardRef<EChartsReact, { series: ResolvedSeries[] }>(
+  function BarsChart({ series }, ref) {
+    return (
+      <ReactECharts
+        ref={ref}
+        option={buildOption(series)}
+        notMerge
+        style={{ height: "100%", width: "100%" }}
+        opts={{ renderer: "canvas" }}
+      />
+    );
+  },
+);

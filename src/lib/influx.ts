@@ -1,25 +1,16 @@
 import "server-only";
 
-import { InfluxDB } from "@influxdata/influxdb-client";
+import { InfluxDB, type QueryApi } from "@influxdata/influxdb-client";
 
 /**
  * Server-only InfluxDB access. The read token must never reach the client,
  * so this module is guarded by `server-only` and reads from process.env.
+ *
+ * Iteration 2 generalised this from the single hard-wired temperature query
+ * (Iteration 1) into a reusable query runner used by flux.ts.
  */
 
 export type SeriesPoint = { t: string; v: number };
-
-export type SeriesResponse = {
-  unit: string;
-  entity: string;
-  points: SeriesPoint[];
-};
-
-/** The single, hard-wired entity for Iteration 1 (see SPEC §5). */
-export const OUTDOOR_TEMPERATURE_ENTITY =
-  "garten_ventus_w830_outdoor_temperature";
-
-const OUTDOOR_TEMPERATURE_UNIT = "°C";
 
 type InfluxEnv = {
   url: string;
@@ -29,7 +20,7 @@ type InfluxEnv = {
 };
 
 /** Read + validate the InfluxDB connection settings. Throws if incomplete. */
-function readInfluxEnv(): InfluxEnv {
+export function readInfluxEnv(): InfluxEnv {
   const url = process.env.INFLUXDB_URL;
   const org = process.env.INFLUXDB_ORG;
   const bucket = process.env.INFLUXDB_BUCKET;
@@ -45,38 +36,31 @@ function readInfluxEnv(): InfluxEnv {
     .map(([name]) => name);
 
   if (missing.length > 0) {
-    throw new Error(
-      `Missing InfluxDB configuration: ${missing.join(", ")}`,
-    );
+    throw new Error(`Missing InfluxDB configuration: ${missing.join(", ")}`);
   }
 
   // Non-null assertions are safe here: the check above guarantees presence.
   return { url: url!, org: org!, bucket: bucket!, token: token! };
 }
 
-/** Build the Flux query for the outdoor-temperature hourly mean (SPEC §5). */
-function buildOutdoorTemperatureQuery(bucket: string): string {
-  return `from(bucket: "${bucket}")
-  |> range(start: -28d)
-  |> filter(fn: (r) => r["entity_id"] == "${OUTDOOR_TEMPERATURE_ENTITY}")
-  |> filter(fn: (r) => r["_field"] == "value")
-  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
-  |> yield(name: "mean")`;
+/** The bucket name, validated from the environment. */
+export function influxBucket(): string {
+  return readInfluxEnv().bucket;
+}
+
+/** A query API bound to the configured org/token. Throws on missing config. */
+export function getQueryApi(): QueryApi {
+  const env = readInfluxEnv();
+  return new InfluxDB({ url: env.url, token: env.token }).getQueryApi(env.org);
 }
 
 /**
- * Query the last 4 weeks of hourly-mean outdoor temperature.
- * Throws on missing config or DB/transport errors — callers map that to 5xx.
+ * Run a Flux query and collect `(_time, _value)` rows into points.
+ * Rows with a null time or value are skipped. Throws on transport/DB errors —
+ * callers map that to 5xx.
  */
-export async function queryOutdoorTemperature(): Promise<SeriesResponse> {
-  const env = readInfluxEnv();
-
-  const queryApi = new InfluxDB({
-    url: env.url,
-    token: env.token,
-  }).getQueryApi(env.org);
-
-  const flux = buildOutdoorTemperatureQuery(env.bucket);
+export async function runFluxPoints(flux: string): Promise<SeriesPoint[]> {
+  const queryApi = getQueryApi();
   const points: SeriesPoint[] = [];
 
   for await (const { values, tableMeta } of queryApi.iterateRows(flux)) {
@@ -90,9 +74,5 @@ export async function queryOutdoorTemperature(): Promise<SeriesResponse> {
     points.push({ t: row._time, v: row._value });
   }
 
-  return {
-    unit: OUTDOOR_TEMPERATURE_UNIT,
-    entity: OUTDOOR_TEMPERATURE_ENTITY,
-    points,
-  };
+  return points;
 }

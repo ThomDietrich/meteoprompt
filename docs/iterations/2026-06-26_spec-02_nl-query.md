@@ -196,55 +196,71 @@ export type Aggregation = 'mean' | 'sum' | 'min' | 'max' | 'none';
 ## 5. Der Index / Katalog (handkuratiert, committet)
 
 Der Bucket `your-bucket` ist die **gesamte HA-Instanz** (~29.847 Entities) — daher
-**kein** Roh-Dump an Claude, sondern ein **kuratierter Katalog** der Wetterstation Ventus W830.
-Quelle: Schema-Scan vom 2026-06-26 (Feld immer `_field == "value"`; Einheit = `_measurement`).
+**kein** Roh-Dump an Claude, sondern ein **kuratierter Katalog** der kanonischen WeeWX/Ecowitt-
+Station **`weather_station_*`** (Daten seit 2021-10-18). Das früher genutzte `garten_ventus_w830_*`
+ist ein lückenhaftes Duplikat und wird **nicht** verwendet — Hintergrund:
+[`docs/data-quality-influxdb.md`](../data-quality-influxdb.md). Quelle: Schema-Scan 2026-06-26
+(numerisches Feld immer `_field == "value"`; Einheit = `_measurement`).
 
 ```ts
 // src/lib/catalog.ts
 export interface CatalogEntry {
-  key: string;                 // stabiler Katalog-Key (= QuerySpec metric)
-  entityId: string;            // garten_ventus_w830_*
+  key: string;                 // stabiler, semantischer Katalog-Key (= QuerySpec metric)
+  entityId: string;            // weather_station_*
   field: 'value';
   unit: string;
   labelDe: string;
   synonyms: string[];          // DE+EN, lowercase
-  defaultAggregation: Aggregation;
+  defaultAggregation: Aggregation;   // physikalisch korrekt je Metrik
   defaultWindow: string;
   defaultChart: ChartType;
-  category: 'temperatur'|'feuchte'|'wind'|'niederschlag'|'druck'|'strahlung';
+  category: 'temperatur'|'feuchte'|'wind'|'niederschlag'|'druck'|'strahlung'|'verdunstung';
+  rainCounter?: boolean;       // true → Tages-Akkumulator: via difference(nonNegative)+sum lesen (§7)
   // type:'raw' implizit; Iteration 3+ ergänzt type:'derived' (transform-gestützt)
 }
 ```
 
-| key | entityId-Suffix | Einheit | labelDe | def. Agg | def. Window | def. Chart | Synonyme (Auszug) |
-|-----|-----------------|---------|---------|----------|-------------|------------|-------------------|
-| `outdoor_temperature` | `outdoor_temperature` | °C | Außentemperatur | mean | 1h | line | außentemperatur, temperatur, draußen, temp |
-| `apparent_temperature` | `apparent_temperature` | °C | Gefühlte Temperatur | mean | 1h | line | gefühlt, gefühlte temperatur, apparent |
-| `dew_point_temperature` | `dew_point_temperature` | °C | Taupunkt | mean | 1h | line | taupunkt, dew point |
-| `heat_index` | `heat_index` | °C | Hitzeindex | mean | 1h | line | hitzeindex, heat index |
-| `humidex` | `humidex` | °C | Humidex | mean | 1h | line | humidex, schwüle |
-| `wind_chill_temperature` | `wind_chill_temperature` | °C | Windchill | mean | 1h | line | windchill, gefühlte kälte |
-| `indoor_temperature` | `indoor_temperature` | °C | Innentemperatur | mean | 1h | line | innen, drinnen, indoor temperature |
-| `indoor_dew_point` | `indoor_dew_point` | °C | Taupunkt innen | mean | 1h | line | taupunkt innen |
-| `outdoor_humidity` | `outdoor_humidity` | % | Luftfeuchte (außen) | mean | 1h | line | luftfeuchte, feuchte, feuchtigkeit, humidity |
-| `indoor_humidity` | `indoor_humidity` | % | Luftfeuchte (innen) | mean | 1h | line | innenfeuchte, indoor humidity |
-| `wind_speed` | `wind_speed` | km/h | Windgeschwindigkeit | mean | 1h | windrose | wind, windgeschwindigkeit, wind speed |
-| `wind_gust_speed` | `wind_gust_speed` | km/h | Windböen | max | 1h | line | böen, windböen, gust |
-| `wind_direction` | `wind_direction` | ° | Windrichtung | mean | 1h | windrose | windrichtung, richtung, wind direction |
-| `rainfall` | `rainfall` | mm | Niederschlag (Regenmenge) | sum | 1d | bars | regen, niederschlag, regenmenge, rain |
-| `rain_rate` | `rain_rate` | mm/h | Regenrate | max | 1h | line | regenrate, regenintensität, rain rate |
-| `barometric_pressure` | `barometric_pressure` | hPa | Luftdruck | mean | 1h | line | luftdruck, druck, pressure, barometer |
-| `atmospheric_pressure` | `atmospheric_pressure` | hPa | Luftdruck (atm.) | mean | 1h | line | atmosphärischer druck |
-| `pressure_altimeter` | `pressure_altimeter` | hPa | Luftdruck (Höhenmesser) | mean | 1h | line | höhenmesser, altimeter |
-| `solar_radiation` | `solar_radiation` | W/m² | Solarstrahlung | mean | 1h | line | solar, sonne, einstrahlung, solar radiation |
-| `maximum_solar_radiation` | `maximum_solar_radiation` | W/m² | Max. Solarstrahlung | max | 1h | line | max solar, maximale einstrahlung |
-| `uv_index` | `uv_index` | – | UV-Index | max | 1h | line | uv, uv-index, uv index |
-| `cloud_base_height` | `cloud_base_height` | m | Wolkenbasis-Höhe | mean | 1h | line | wolken, wolkenbasis, cloud base |
+EntityId = `weather_station_<Suffix>`. ⚑ = Akkumulator-Metrik (Tageszähler → §7).
 
-> `wind_speed`/`wind_direction` haben `defaultChart: windrose`, weil sie zusammen die Windrose
-> bilden (Magnitude + Richtung). Bei reinem „Windgeschwindigkeit"-Wunsch ohne Richtung darf
-> Claude `line` wählen. Die drei Druck-Varianten sind quasi-redundant; **`barometric_pressure`**
-> ist die kanonische „Luftdruck"-Antwort.
+| key | entityId-Suffix | Einheit | labelDe | def. Agg/Window | def. Chart | Synonyme (Auszug) |
+|-----|-----------------|---------|---------|-----------------|------------|-------------------|
+| `outdoor_temperature` | `outtemp_c` | °C | Außentemperatur | mean/1h | line | außentemperatur, temperatur, draußen, temp |
+| `indoor_temperature` | `intemp_c` | °C | Innentemperatur | mean/1h | line | innen, drinnen, indoor temp |
+| `apparent_temperature` | `apptemp_c` | °C | Gefühlte Temperatur | mean/1h | line | gefühlt, apparent |
+| `dew_point` | `dewpoint_c` | °C | Taupunkt | mean/1h | line | taupunkt, dew point |
+| `indoor_dew_point` | `indewpoint_c` | °C | Taupunkt innen | mean/1h | line | taupunkt innen |
+| `heat_index` | `heatindex_c` | °C | Hitzeindex | mean/1h | line | hitzeindex, heat index |
+| `humidex` | `humidex_c` | °C | Humidex | mean/1h | line | humidex, schwüle |
+| `wind_chill` | `windchill_c` | °C | Windchill | mean/1h | line | windchill, gefühlte kälte |
+| `outdoor_temp_18h_max` | `outtemp_c_18h_max` | °C | Außentemp. 18 h-Max | max/1h | line | tageshöchst, höchsttemperatur |
+| `outdoor_temp_18h_min` | `outtemp_c_18h_min` | °C | Außentemp. 18 h-Min | min/1h | line | tagestiefst, tiefsttemperatur |
+| `outdoor_humidity` | `outhumidity` | % | Luftfeuchte (außen) | mean/1h | line | luftfeuchte, feuchte, humidity |
+| `indoor_humidity` | `inhumidity` | % | Luftfeuchte (innen) | mean/1h | line | innenfeuchte, indoor humidity |
+| `wind_speed` | `windspeed_kph` | km/h | Windgeschwindigkeit | mean/1h | windrose | wind, windgeschwindigkeit, wind speed |
+| `wind_gust` | `windgust_kph` | km/h | Windböen | max/1h | line | böen, gust |
+| `wind_direction` | `winddir` | ° | Windrichtung | mean/1h | windrose | windrichtung, richtung, wind direction |
+| `wind_gust_direction` | `windgustdir` | ° | Windböen-Richtung | mean/1h | windrose | böenrichtung, gust direction |
+| `wind_run` | `windrun_km` | km | Windweg (Tag) | max/1d | bars | windweg, wind run |
+| `rainfall` ⚑ | `dayrain_mm` | mm | Niederschlag (Regenmenge) | **diff⁺ + sum** | bars | regen, niederschlag, regenmenge, rain |
+| `rain_rate` | `rainrate_mm_per_hour` | mm/h | Regenrate | mean/1h | line | regenrate, regenintensität, rain rate |
+| `rain_1h` | `hourrain_mm` | mm | Regen (letzte Stunde) | last | line | stundenregen, letzte stunde |
+| `rain_24h` | `rain24_mm` | mm | Regen (24 h rollierend) | last | line | 24h regen |
+| `pressure` | `pressure_mbar` | hPa | Luftdruck | mean/1h | line | luftdruck, druck, pressure |
+| `barometer` | `barometer_mbar` | hPa | Luftdruck (Barometer) | mean/1h | line | barometer |
+| `altimeter` | `altimeter_mbar` | hPa | Luftdruck (Höhenmesser) | mean/1h | line | höhenmesser, altimeter |
+| `solar_radiation` | `radiation_wpm2` | W/m² | Solarstrahlung | mean/1h | line | solar, sonne, einstrahlung |
+| `max_solar_radiation` | `maxsolarrad_wpm2` | W/m² | Max. Solarstrahlung | max/1h | line | max solar |
+| `uv_index` | `uv` | – | UV-Index | max/1h | line | uv, uv-index |
+| `cloud_base` | `cloudbase_meter` | m | Wolkenbasis-Höhe | mean/1h | line | wolken, wolkenbasis, cloud base |
+| `evapotranspiration` ⚑ | `evapotranspiration_dailysensor_mm` | mm | Evapotranspiration | **diff⁺ + sum** | bars | verdunstung, evapotranspiration, et |
+
+> **⚑ Akkumulator-Metriken** (`rainfall`, `evapotranspiration`): Tageszähler — via
+> `difference(nonNegative:true) + sum` lesen (§7), **nie** roh summieren. Die rohen `rain_mm`-
+> und ventus-`rainfall`-Serien sind fehlerhaft (Über-/Unterzählung) und **bewusst nicht** im
+> Katalog — Details: [`docs/data-quality-influxdb.md`](../data-quality-influxdb.md).
+> `wind_speed`+`wind_direction` bilden zusammen die **Windrose**; bei reinem
+> „Windgeschwindigkeit"-Wunsch ohne Richtung darf Claude `line` wählen. Drei Druck-Varianten
+> quasi-redundant — **`pressure`** ist die kanonische „Luftdruck"-Antwort.
 
 **Diagrammwahl-Regeln (für Claude im Prompt):**
 - Standardmäßig `defaultChart` der Metrik nehmen.
@@ -291,6 +307,23 @@ from(bucket: "your-bucket")
 - Mehrere Serien → mehrere `yield`s (oder mehrere Queries) und im Response je Serie ein Array.
 - **Whitelist:** `metric` muss im Katalog sein; `entityId` kommt **nur** aus dem Katalog
   (kein vom LLM gelieferter freier Entity-String) → keine Injection, kein Streuen über die 30k.
+
+**Sonderfall Akkumulator-Metriken** (`rainCounter: true` — `rainfall`, `evapotranspiration`):
+Nicht direkt aggregieren, sondern den **Tagesakkumulator differenzieren** und dann summieren —
+so sind beliebige Fenster (Stunde, Abend, Tag, Woche) korrekt **und** der Mitternachts-Reset wird
+gekappt:
+```flux
+from(bucket: "your-bucket")
+  |> range(start: <start>, stop: <stop>)
+  |> filter(fn: (r) => r["entity_id"] == "weather_station_dayrain_mm")
+  |> filter(fn: (r) => r["_field"] == "value")
+  |> difference(nonNegative: true)
+  |> aggregateWindow(every: <window>, fn: sum, createEmpty: false)
+  |> yield(name: "<series.id>")
+```
+Validiert 2026-06-20: 3h-Summen ergeben exakt die Tagesmenge 6,4 mm. **Niemals** rohe `rain_mm`
+summieren (Mehrfach-Writes → ~3–4× Überzählung). Hintergrund & verworfene Serien:
+[`docs/data-quality-influxdb.md`](../data-quality-influxdb.md).
 
 **Response-Form (`/api/ask` und `/api/chart`):** je Chart
 ```jsonc
