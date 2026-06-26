@@ -1,6 +1,9 @@
 # Iteration 3 — Diagramm-Vielfalt + Farben + Smart Variety („Vielfalt")
 
-> **Status:** 🟢 aktiv (Entwurf zur Abstimmung) — 2026-06-26. Phase 2 von 3:
+> **Status:** ✅ abgeschlossen — Commit `5018eab` (2026-06-27). Gate A grün + Gate B
+> per Playwright verifiziert: 14 Diagrammtypen, Smart-Variety, Zufallsfarben (Wappen),
+> „Neu erstellen", **+ Zeitzonen-Fix** (Europe/Berlin) **+ gebrandetes UI** (Fraunces-Header,
+> rundere Pills, größere Auto-Grow-Suchleiste). Phase 2 von 3:
 > 03 „Rahmen" (✅ `b14cf22`) → **04 „Vielfalt"** (dieses Doc) → 05 „Intelligenz".
 > Erbt alles aus Iteration 2/03. Quelle: [`docs/research/echarts-chart-catalog.md`](../research/echarts-chart-catalog.md).
 
