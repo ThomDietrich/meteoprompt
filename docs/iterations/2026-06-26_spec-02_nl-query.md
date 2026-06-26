@@ -1,6 +1,9 @@
 # Iteration 2 — Natürlichsprachige Abfrage → Diagramm-Cards
 
-> **Status:** 🟢 aktiv — Spec festgelegt 2026-06-26. Baut auf Iteration 1
+> **Status:** ✅ abgeschlossen — Commit `d7b6c4e` (2026-06-26). Gate A grün + Gate B
+> per Playwright (beide Keys) verifiziert: NL→line/bars/windrose mit echten Daten,
+> korrekte Regenwerte, Mehr-Card, Drag/Resize-Reflow, Löschen, Reload-Persistenz
+> (nur `/api/chart`), Unmappable→422. Baut auf Iteration 1
 > ([`2026-06-26_spec-01_walking-skeleton.md`](./2026-06-26_spec-01_walking-skeleton.md));
 > erbt Stack, Docker/Compose, das verschiebbare Grid, die serverseitige InfluxDB-Anbindung.
 >
