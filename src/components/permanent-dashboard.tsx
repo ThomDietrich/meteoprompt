@@ -3,9 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type EChartsReact from "echarts-for-react";
 
-import { LineChart } from "@/components/charts/line-chart";
-import { BarsChart } from "@/components/charts/bars-chart";
-import { WindRose } from "@/components/charts/wind-rose";
+import { isChartEmpty, renderChart } from "@/components/charts/render-chart";
 import {
   Card,
   CardContent,
@@ -16,33 +14,17 @@ import { PERMANENT_CHARTS } from "@/lib/permanent-dashboard";
 import type { ChartResponse, ChartSpec, ResolvedSeries } from "@/lib/query-spec";
 
 /**
- * Permanent "Stations-Dashboard": a fixed, responsive CSS grid of the 10
- * predefined charts (spec-03 §5). NOT react-grid-layout — not draggable,
- * resizable, or deletable, and never persisted. Each chart resolves its data
- * through the existing /api/chart path (no Claude). Charts reflow on container
- * resize via ResizeObserver, like the user cards.
+ * Permanent "Stations-Dashboard": a fixed, responsive CSS grid of the 12
+ * predefined charts (spec-04 §8), now spanning many chart types. NOT
+ * react-grid-layout — not draggable, resizable, or deletable, and never
+ * persisted. Each chart resolves its data through the existing /api/chart path
+ * (no Claude). Charts reflow on container resize via ResizeObserver.
  */
 
 type LoadState =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "ready"; series: ResolvedSeries[] };
-
-function renderChart(
-  spec: ChartSpec,
-  series: ResolvedSeries[],
-  chartRef: React.Ref<EChartsReact>,
-) {
-  switch (spec.chart) {
-    case "bars":
-      return <BarsChart ref={chartRef} series={series} />;
-    case "windrose":
-      return <WindRose ref={chartRef} series={series} />;
-    case "line":
-    default:
-      return <LineChart ref={chartRef} series={series} />;
-  }
-}
 
 function PermanentChartCard({ spec }: { spec: ChartSpec }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
@@ -106,8 +88,7 @@ function PermanentChartCard({ spec }: { spec: ChartSpec }) {
   }, []);
 
   const isEmpty =
-    state.status === "ready" &&
-    state.series.every((s) => s.points.length === 0);
+    state.status === "ready" && isChartEmpty(state.series);
 
   return (
     <Card className="h-80">

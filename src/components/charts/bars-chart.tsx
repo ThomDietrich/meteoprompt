@@ -5,6 +5,7 @@ import ReactECharts from "echarts-for-react";
 import type { EChartsOption } from "echarts";
 import type EChartsReact from "echarts-for-react";
 
+import { seriesColor } from "@/components/charts/chart-base";
 import type { ResolvedSeries } from "@/lib/query-spec";
 
 /**
@@ -34,9 +35,10 @@ function buildOption(series: ResolvedSeries[]): EChartsOption {
       min: 0,
       axisLabel: { formatter: `{value} ${unit}` },
     },
-    series: series.map((s) => ({
+    series: series.map((s, i) => ({
       name: s.label,
       type: "bar" as const,
+      itemStyle: { color: seriesColor(series, i) },
       data: s.points.map((p) => [p.t, p.v] as [string, number]),
       barMaxWidth: 24,
     })),

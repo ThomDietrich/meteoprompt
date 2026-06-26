@@ -17,6 +17,16 @@
   --color-brand-field: #f7f9fc;
 }
 
+/*
+ * Display serif for the masthead title. We define a plain utility (not a @theme
+ * font token) because the family is backed by the next/font CSS variable
+ * --font-fraunces, set on <html> in layout.tsx — referencing it from @theme
+ * resolves before that variable exists. Applied via the `font-display` class.
+ */
+.font-display {
+  font-family: var(--font-fraunces), Georgia, "Times New Roman", serif;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

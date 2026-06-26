@@ -18,13 +18,22 @@ import {
   type CardLayout,
   type StoredCard,
 } from "@/lib/card-store";
-import type { AskResponse } from "@/lib/query-spec";
+import { assignSeriesColors } from "@/lib/colors";
+import type { AskResponse, ChartSpec } from "@/lib/query-spec";
 
 /** A transient skeleton placeholder shown while /api/ask is in flight. */
 interface PendingCard {
   id: string;
   originQuery: string;
   layout: CardLayout;
+}
+
+/**
+ * Give a chart's series persisted random colours (spec-04 §5). `avoid` biases a
+ * regenerate away from the previous colours so a re-roll looks different.
+ */
+function colorizeSpec(spec: ChartSpec, avoid: readonly string[] = []): ChartSpec {
+  return { ...spec, series: assignSeriesColors(spec.series, avoid) };
 }
 
 /**
@@ -130,6 +139,9 @@ export default function DashboardGrid() {
 
   const [cards, setCards] = useState<StoredCard[]>([]);
   const [pendingCards, setPendingCards] = useState<PendingCard[]>([]);
+  const [regeneratingIds, setRegeneratingIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -196,8 +208,8 @@ export default function DashboardGrid() {
               .slice(2, 7)}`;
             additions.push({
               id,
-              // Re-id the spec so /api/chart series yields stay unique per card.
-              spec: { ...chart.spec, id },
+              // Re-id the spec (unique /api/chart yields) + assign random colours.
+              spec: colorizeSpec({ ...chart.spec, id }),
               originQuery: data.query,
               layout,
             });
@@ -225,6 +237,71 @@ export default function DashboardGrid() {
       });
     },
     [persist],
+  );
+
+  // "Neu erstellen" (spec-04 §5b): re-POST the card's origin query with a nudge
+  // toward a DIFFERENT fitting chart type, then replace the card's spec in place
+  // (same grid slot + layout) with new colours. Shows a skeleton while loading.
+  const handleRegenerate = useCallback(
+    async (id: string) => {
+      const card = cards.find((c) => c.id === id);
+      if (!card) return;
+
+      setRegeneratingIds((prev) => new Set(prev).add(id));
+      const clearFlag = () =>
+        setRegeneratingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+
+      try {
+        const res = await fetch("/api/ask", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            q: card.originQuery,
+            currentChart: card.spec.chart,
+          }),
+        });
+        if (!res.ok) {
+          let detail = `HTTP ${res.status}`;
+          try {
+            const body = (await res.json()) as { detail?: string };
+            if (body?.detail) detail = body.detail;
+          } catch {
+            // keep status message
+          }
+          throw new Error(detail);
+        }
+        const data = (await res.json()) as AskResponse;
+        const first = data.charts[0];
+        if (!first) throw new Error("Keine neue Darstellung erhalten.");
+
+        const avoid = card.spec.series
+          .map((s) => s.color)
+          .filter(Boolean) as string[];
+
+        setCards((prev) => {
+          const next = prev.map((c) =>
+            c.id === id
+              ? {
+                  ...c,
+                  // Keep id + layout; swap in the new (recoloured) spec.
+                  spec: colorizeSpec({ ...first.spec, id }, avoid),
+                }
+              : c,
+          );
+          persist(next);
+          return next;
+        });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Neu erstellen fehlgeschlagen");
+      } finally {
+        clearFlag();
+      }
+    },
+    [cards, persist],
   );
 
   const handleBreakpointChange = useCallback((breakpoint: string) => {
@@ -323,15 +400,23 @@ export default function DashboardGrid() {
           onBreakpointChange={handleBreakpointChange}
           onLayoutChange={handleLayoutChange}
         >
-          {cards.map((card) => (
-            <div key={card.id} className="flex">
-              <ChartCard
-                spec={card.spec}
-                originQuery={card.originQuery}
-                onRemove={() => handleRemove(card.id)}
-              />
-            </div>
-          ))}
+          {cards.map((card) =>
+            regeneratingIds.has(card.id) ? (
+              <div key={card.id} className="flex">
+                <SkeletonCard originQuery={card.originQuery} />
+              </div>
+            ) : (
+              <div key={card.id} className="flex">
+                <ChartCard
+                  spec={card.spec}
+                  originQuery={card.originQuery}
+                  onRemove={() => handleRemove(card.id)}
+                  onRegenerate={() => handleRegenerate(card.id)}
+                  regenerating={false}
+                />
+              </div>
+            ),
+          )}
           {pendingCards.map((p) => (
             <div key={p.id} className="flex">
               <SkeletonCard originQuery={p.originQuery} />

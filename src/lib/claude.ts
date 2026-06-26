@@ -3,11 +3,13 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 
 import { CATALOG, getByKey } from "@/lib/catalog";
+import { CHART_CATALOG } from "@/lib/chart-catalog";
 import {
   AGGREGATIONS,
+  IMPLEMENTED_CHART_TYPES,
   SERIES_ROLES,
-  V2_CHART_TYPES,
   type Aggregation,
+  type Binning,
   type ChartSpec,
   type ChartType,
   type QuerySpec,
@@ -95,9 +97,15 @@ const QUERY_SPEC_TOOL: Anthropic.Tool = {
             },
             chart: {
               type: "string",
-              enum: [...V2_CHART_TYPES],
+              enum: [...IMPLEMENTED_CHART_TYPES],
               description:
-                "Chart type. 'windrose' requires a direction + magnitude series pair.",
+                "Chart type — pick a well-FITTING one weighted-randomly (see the chart catalog + rules in the system prompt). Don't always default to line.",
+            },
+            binning: {
+              type: "string",
+              enum: ["calendar", "hourOfDay×weekday"],
+              description:
+                "Only for heatmap types: 'calendar' for heatmapCalendar, 'hourOfDay×weekday' for heatmapHourDay.",
             },
             timeRange: {
               type: "object",
@@ -130,7 +138,7 @@ const QUERY_SPEC_TOOL: Anthropic.Tool = {
                     type: "string",
                     enum: [...SERIES_ROLES],
                     description:
-                      "'value' for normal series; for a windrose use 'direction' + 'magnitude'.",
+                      "'value' for normal series; windrose → 'direction' + 'magnitude'; scatter → 'x' + 'y'.",
                   },
                   metric: {
                     type: "string",
@@ -163,11 +171,19 @@ const QUERY_SPEC_TOOL: Anthropic.Tool = {
 
 // ── System prompt (catalog + chart-selection rules) ─────────────────────────
 
-function buildSystemPrompt(): string {
+function buildSystemPrompt(currentChart?: string): string {
   const lines = CATALOG.map(
     (e) =>
       `- ${e.key} | ${e.labelDe} | ${e.unit} | def: ${e.defaultAggregation}/${e.defaultWindow} ${e.defaultChart}${e.rainCounter ? " | ⚑ accumulator" : ""} | synonyms: ${e.synonyms.join(", ")}`,
   ).join("\n");
+
+  const chartLines = CHART_CATALOG.map(
+    (c) => `- ${c.chart} [${c.dataShape}]: ${c.fitsFor}`,
+  ).join("\n");
+
+  const nudge = currentChart
+    ? `\nVARIANZ-HINWEIS: Diese Anfrage wird NEU erzeugt; der aktuelle Typ war "${currentChart}". Wähle bevorzugt einen ANDEREN gut passenden Typ, damit sich die Darstellung sichtbar ändert.\n`
+    : "";
 
   return `Du bist ein Assistent, der natürlichsprachige Wetter-Anfragen in eine strukturierte Abfrage übersetzt.
 Du MUSST das Tool "${TOOL_NAME}" aufrufen und ausschließlich Metriken aus dem folgenden Katalog verwenden.
@@ -175,14 +191,25 @@ Du MUSST das Tool "${TOOL_NAME}" aufrufen und ausschließlich Metriken aus dem f
 KATALOG (key | Label | Einheit | Default-Aggregation/Fenster Default-Diagramm | Synonyme):
 ${lines}
 
-DIAGRAMMWAHL-REGELN:
-- Standardmäßig den Default-Diagrammtyp der Metrik nehmen.
-- "Verlauf" / "über die Zeit" → line; "Summe" / "pro Tag" / "wie viel" → bars; "Windrichtung" / "Windrose" → windrose.
-- Gleiche Einheit + Vergleich gewünscht (z. B. Innen- vs. Außentemperatur) → EINE Card, mehrere series.
-- Unterschiedliche Einheiten / klar getrennte Themen → MEHRERE charts (Cards).
-- Windrose: genau zwei series mit role 'direction' (wind_direction) und 'magnitude' (wind_speed).
-- ⚑ Akkumulator-Metriken (rainfall, evapotranspiration): aggregation 'sum' verwenden (Backend rechnet korrekt via difference+sum).
+DIAGRAMMTYPEN (chart [Datenform-Anforderung]: Eignung):
+${chartLines}
 
+SMART-VARIETY (Diagrammwahl):
+- Wähle aus den GUT PASSENDEN Diagrammtypen für die Frage GEWICHTET-ZUFÄLLIG einen aus: den am
+  besten passenden mit HÖHERER, einen der auch passt mit GERINGERER Wahrscheinlichkeit.
+- Wähle NIE einen Typ, dessen Datenform nicht erfüllbar ist:
+  scatter braucht GENAU 2 Metriken (role 'x' und 'y'); candlestick/rangeBand/barRange brauchen EINE
+  Metrik (Backend bildet min/max je Fenster); gauge braucht EINE Metrik (letzter Wert);
+  windrose braucht role 'direction' + 'magnitude'; radar/themeRiver brauchen MEHRERE Metriken.
+- Vermeide es, IMMER 'line' zu nehmen, wenn ein anderer Typ ebenso gut passt.
+- Beispiele: "Temperaturspanne pro Tag" → candlestick/rangeBand/barRange; "Temperatur vs. Luftfeuchte"
+  → scatter (2 Metriken, x/y); "wie warm ist es gerade" → gauge; "Tagesgang/Stunde×Wochentag" →
+  heatmapHourDay (binning 'hourOfDay×weekday'); "Jahresüberblick" → heatmapCalendar (binning 'calendar');
+  "Verteilung pro Monat" → boxplot/violin.
+- heatmapHourDay/heatmapCalendar/boxplot/violin brauchen einen längeren Zeitraum (z. B. -30d/-365d).
+- ⚑ Akkumulator-Metriken (rainfall, evapotranspiration): aggregation 'sum' (Backend: difference+sum).
+- Gleiche Einheit + Vergleich → EINE Card mit mehreren series; verschiedene Themen → mehrere charts.
+${nudge}
 ZEITRÄUME: relative Flux-Dauern wie -7d, -28d, -1d, -3d; stop üblicherweise 'now'.
 
 KLASSIFIZIERUNG (Feld "reason", IMMER setzen):
@@ -214,10 +241,19 @@ function validateAggregation(v: unknown): Aggregation {
 }
 
 function validateChartType(v: unknown): ChartType {
-  if (typeof v === "string" && (V2_CHART_TYPES as readonly string[]).includes(v)) {
+  if (
+    typeof v === "string" &&
+    (IMPLEMENTED_CHART_TYPES as readonly string[]).includes(v)
+  ) {
     return v as ChartType;
   }
   throw new UnmappableQueryError("unmappable", `Invalid chart type: ${String(v)}`);
+}
+
+function validateBinning(v: unknown): Binning | undefined {
+  if (v == null) return undefined;
+  if (v === "calendar" || v === "hourOfDay×weekday") return v;
+  return undefined; // ignore an unrecognised binning rather than fail
 }
 
 function validateRole(v: unknown): SeriesRole | undefined {
@@ -274,6 +310,7 @@ function validateChart(raw: unknown, idx: number): ChartSpec {
     throw new UnmappableQueryError("unmappable", "Chart has no series");
   }
   const series = seriesRaw.map((s, si) => validateSeries(s, idx, si));
+  const binning = validateBinning(r.binning);
 
   return {
     id: `c${idx}`,
@@ -281,6 +318,7 @@ function validateChart(raw: unknown, idx: number): ChartSpec {
     chart: validateChartType(r.chart),
     timeRange: { start, ...(stop ? { stop } : {}) },
     series,
+    ...(binning ? { binning } : {}),
   };
 }
 
@@ -315,16 +353,20 @@ function validateQuerySpec(input: unknown, query: string): QuerySpec {
 
 /**
  * Turn free text into a validated QuerySpec via Claude tool-use.
- * Throws UnmappableQueryError (→ 422) when the model can't produce a valid,
- * catalog-mappable spec; throws other errors (missing key / transport) → 5xx.
+ * `currentChart` (regenerate flow) nudges the model toward a DIFFERENT fitting
+ * chart type. Throws UnmappableQueryError (→ 422) when the model can't produce a
+ * valid, catalog-mappable spec; throws other errors (missing key / transport) → 5xx.
  */
-export async function deriveQuerySpec(query: string): Promise<QuerySpec> {
+export async function deriveQuerySpec(
+  query: string,
+  currentChart?: string,
+): Promise<QuerySpec> {
   const client = getClient();
 
   const message = await client.messages.create({
     model: MODEL,
     max_tokens: 2048,
-    system: buildSystemPrompt(),
+    system: buildSystemPrompt(currentChart),
     tools: [QUERY_SPEC_TOOL],
     tool_choice: { type: "tool", name: TOOL_NAME },
     messages: [{ role: "user", content: query }],

@@ -10,6 +10,9 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.106.0",
+    "@echarts-x/custom-bar-range": "^1.2.1",
+    "@echarts-x/custom-line-range": "^1.1.1",
+    "@echarts-x/custom-violin": "^1.1.1",
     "@influxdata/influxdb-client": "^1.35.0",
     "@tanstack/react-table": "^8.21.0",
     "@tanstack/react-virtual": "^3.14.0",

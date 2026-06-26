@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { RefreshCw, Trash2 } from "lucide-react";
 import type EChartsReact from "echarts-for-react";
 
-import { LineChart } from "@/components/charts/line-chart";
-import { BarsChart } from "@/components/charts/bars-chart";
-import { WindRose } from "@/components/charts/wind-rose";
+import { isChartEmpty, renderChart } from "@/components/charts/render-chart";
 import {
   Card,
   CardContent,
@@ -16,10 +15,12 @@ import {
 import type { ChartResponse, ChartSpec, ResolvedSeries } from "@/lib/query-spec";
 
 /**
- * Generic chart card: header (title + origin-query line + trash icon), a renderer
- * switch by ChartSpec.chart, and loading/error/empty states. Fetches its own data
- * from /api/chart on mount (no Claude) so new cards and reload-rehydrated cards
- * follow the exact same path. ResizeObserver drives chart.resize() on grid resize.
+ * Generic chart card: header (title + origin-query line + regenerate + trash
+ * icons), a renderer switch by ChartSpec.chart, and loading/error/empty states.
+ * Fetches its own data from /api/chart on mount (no Claude) so new cards and
+ * reload-rehydrated cards follow the same path. ResizeObserver drives
+ * chart.resize() on grid resize. The "Neu erstellen" button (spec-04 §5b) asks
+ * the parent to re-roll this card's chart type + colours in place.
  */
 
 type LoadState =
@@ -27,50 +28,18 @@ type LoadState =
   | { status: "error"; message: string }
   | { status: "ready"; series: ResolvedSeries[] };
 
-function TrashIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="h-4 w-4"
-      aria-hidden="true"
-    >
-      <path d="M3 6h18" />
-      <path d="M19 6l-.867 12.142A2 2 0 0 1 16.138 20H7.862a2 2 0 0 1-1.995-1.858L5 6" />
-      <path d="M10 11v6M14 11v6" />
-      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-    </svg>
-  );
-}
-
-function renderChart(
-  spec: ChartSpec,
-  series: ResolvedSeries[],
-  chartRef: React.Ref<EChartsReact>,
-) {
-  switch (spec.chart) {
-    case "bars":
-      return <BarsChart ref={chartRef} series={series} />;
-    case "windrose":
-      return <WindRose ref={chartRef} series={series} />;
-    case "line":
-    default:
-      return <LineChart ref={chartRef} series={series} />;
-  }
-}
-
 export function ChartCard({
   spec,
   originQuery,
   onRemove,
+  onRegenerate,
+  regenerating = false,
 }: {
   spec: ChartSpec;
   originQuery: string;
   onRemove: () => void;
+  onRegenerate?: () => void;
+  regenerating?: boolean;
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const chartRef = useRef<EChartsReact>(null);
@@ -138,8 +107,7 @@ export function ChartCard({
   }, []);
 
   const isEmpty =
-    state.status === "ready" &&
-    state.series.every((s) => s.points.length === 0);
+    state.status === "ready" && isChartEmpty(state.series);
 
   return (
     <Card className="h-full w-full">
@@ -151,20 +119,38 @@ export function ChartCard({
               {originQuery}
             </CardDescription>
           </div>
-          <button
-            type="button"
-            // Don't let the drag handle swallow the click.
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              onRemove();
-            }}
-            aria-label="Card löschen"
-            title="Card löschen"
-            className="shrink-0 rounded-md p-1 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-          >
-            <TrashIcon />
-          </button>
+          <div className="flex shrink-0 items-center gap-0.5">
+            {onRegenerate && (
+              <button
+                type="button"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRegenerate();
+                }}
+                disabled={regenerating}
+                aria-label="Neu erstellen"
+                title="Neu erstellen (anderer Diagrammtyp + Farben)"
+                className="rounded-md p-1 text-slate-400 transition-colors hover:bg-sky-50 hover:text-brand-blue disabled:opacity-50 dark:hover:bg-sky-950/40 dark:hover:text-sky-400"
+              >
+                <RefreshCw className={`h-4 w-4 ${regenerating ? "animate-spin" : ""}`} />
+              </button>
+            )}
+            <button
+              type="button"
+              // Don't let the drag handle swallow the click.
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemove();
+              }}
+              aria-label="Card löschen"
+              title="Card löschen"
+              className="rounded-md p-1 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>

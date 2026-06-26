@@ -58,8 +58,10 @@ function Pill({ kv }: { kv: KennwertValue }) {
   const compassText = kv.compass ? ` ${kv.compass}` : "";
 
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-brand-blue/10 bg-white/80 px-3 py-2 shadow-sm dark:border-white/10 dark:bg-slate-900/70">
-      <Icon className="h-4 w-4 shrink-0 text-brand-blue dark:text-sky-400" aria-hidden />
+    <div className="flex items-center gap-2.5 rounded-2xl border border-brand-blue/10 bg-white/80 px-3 py-2.5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-blue/20 hover:shadow-md dark:border-white/10 dark:bg-slate-900/70">
+      <span className="inline-flex shrink-0 items-center justify-center rounded-xl bg-brand-blue/10 p-1.5 dark:bg-brand-blue/25">
+        <Icon className="h-4 w-4 text-brand-blue dark:text-sky-400" aria-hidden />
+      </span>
       <div className="min-w-0 leading-tight">
         <div className="truncate text-[11px] text-brand-ink/60 dark:text-slate-400">
           {kv.label}

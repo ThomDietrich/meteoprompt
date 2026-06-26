@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { deriveQuerySpec, UnmappableQueryError } from "@/lib/claude";
-import { resolveChartSeries } from "@/lib/flux";
+import { ChartShapeError, resolveChartSeries } from "@/lib/flux";
 import type { AskResponse, ChartResult } from "@/lib/query-spec";
 
 // Never run at build time — Claude + InfluxDB are called per request at runtime,
@@ -11,8 +11,12 @@ export const revalidate = 0;
 
 export async function POST(request: Request) {
   let q: string;
+  let currentChart: string | undefined;
   try {
-    const body = (await request.json()) as { q?: unknown };
+    const body = (await request.json()) as {
+      q?: unknown;
+      currentChart?: unknown;
+    };
     if (typeof body.q !== "string" || body.q.trim().length === 0) {
       return NextResponse.json(
         { error: "Bad request", detail: "Body must include a non-empty 'q' string." },
@@ -20,6 +24,10 @@ export async function POST(request: Request) {
       );
     }
     q = body.q.trim();
+    // Optional regenerate nudge: the card's current chart type.
+    if (typeof body.currentChart === "string" && body.currentChart.length > 0) {
+      currentChart = body.currentChart;
+    }
   } catch {
     return NextResponse.json(
       { error: "Bad request", detail: "Invalid JSON body." },
@@ -30,7 +38,7 @@ export async function POST(request: Request) {
   // 1) NL → validated QuerySpec via Claude tool-use.
   let charts;
   try {
-    const spec = await deriveQuerySpec(q);
+    const spec = await deriveQuerySpec(q, currentChart);
     charts = spec.charts;
   } catch (error) {
     if (error instanceof UnmappableQueryError) {
@@ -71,6 +79,18 @@ export async function POST(request: Request) {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unknown InfluxDB error";
+
+    // Claude chose a chart type its data shape can't satisfy → clean 422 (no crash).
+    if (error instanceof ChartShapeError) {
+      return NextResponse.json(
+        {
+          error: "chart_shape",
+          detail:
+            "Der gewählte Diagrammtyp passt nicht zur Datenform — bitte die Anfrage anders formulieren.",
+        },
+        { status: 422 },
+      );
+    }
     const status = /Missing InfluxDB configuration/.test(message) ? 503 : 500;
     console.error("[api/ask] data step failed:", message);
     return NextResponse.json(

@@ -5,8 +5,9 @@
 # ──────────────────────────────────────────────────────────────
 FROM node:24-alpine AS base
 WORKDIR /app
-# libc6-compat helps some native deps on Alpine.
-RUN apk add --no-cache libc6-compat
+# libc6-compat helps some native deps on Alpine; tzdata provides named
+# timezones (Alpine/musl ships none) so TZ=Europe/Berlin actually takes effect.
+RUN apk add --no-cache libc6-compat tzdata
 
 # ──────────────────────────────────────────────────────────────
 # deps — install node_modules from the lockfile

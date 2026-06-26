@@ -13,6 +13,10 @@ services:
       - NEXT_TELEMETRY_DISABLED=1
       # Polling makes file watching reliable across the macOS/Docker bind mount.
       - WATCHPACK_POLLING=true
+      # Run the container in local time so JS Date getters (heatmapHourDay,
+      # calendar dayKey) align with the Flux Europe/Berlin windows. Needs tzdata
+      # (installed in the Dockerfile base stage).
+      - TZ=Europe/Berlin
     volumes:
       # Source bind-mount for hot reload …
       - ./:/app
