@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { ChartShapeError, resolveChartSeries } from "@/lib/flux";
+import { ChartShapeError, resolveChart } from "@/lib/flux";
+import { logFailedQuery } from "@/lib/query-log";
 import type { ChartResponse, ChartSpec } from "@/lib/query-spec";
 
 // Reload-refresh endpoint: ChartSpec → data, WITHOUT Claude. Deterministic and
@@ -42,10 +43,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    // resolveChartSeries throws on unknown metric keys / unsupported source kinds
-    // (ChartShapeError) or an unsatisfiable chart/data-shape combination.
-    const series = await resolveChartSeries(spec);
-    const payload: ChartResponse = { spec, series };
+    // resolveChart throws on unknown metric keys / unsupported source kinds
+    // (ChartShapeError) or an unsatisfiable chart/data-shape combination. For
+    // extreme-line specs it resolves the series + answer in a single scan.
+    const { series, answer } = await resolveChart(spec);
+    const payload: ChartResponse = { spec, series, ...(answer ? { answer } : {}) };
     return NextResponse.json(payload, {
       headers: { "Cache-Control": "no-store" },
     });
@@ -58,6 +60,7 @@ export async function POST(request: Request) {
       error instanceof ChartShapeError ||
       /unknown metric|unsupported source/i.test(message)
     ) {
+      await logFailedQuery({ query: spec.title, reason: "invalid_spec", detail: message, route: "/api/chart" });
       return NextResponse.json(
         { error: "invalid_spec", detail: message },
         { status: 400 },
@@ -65,6 +68,7 @@ export async function POST(request: Request) {
     }
     const status = /Missing InfluxDB configuration/.test(message) ? 503 : 500;
     console.error("[api/chart] query failed:", message);
+    await logFailedQuery({ query: spec.title, reason: "server_error", detail: message, route: "/api/chart" });
     return NextResponse.json(
       { error: "data_error", detail: message },
       { status },

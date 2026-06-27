@@ -74,7 +74,7 @@ export function SearchBox({
   if (isHero) {
     return (
       <div className="flex min-h-[58vh] flex-col items-center justify-center px-4">
-        <h2 className="mb-2 text-center font-display text-2xl font-semibold tracking-tight text-brand-ink dark:text-slate-100 sm:text-3xl">
+        <h2 className="mb-2 text-center text-2xl font-semibold tracking-tight text-brand-ink dark:text-slate-100 sm:text-3xl">
           Was möchtest du über das Wetter wissen?
         </h2>
         <p className="mb-7 text-center text-sm text-brand-ink/55 dark:text-slate-400">

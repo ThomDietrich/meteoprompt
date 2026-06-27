@@ -6,15 +6,22 @@ import { CATALOG, getByKey } from "@/lib/catalog";
 import { CHART_CATALOG } from "@/lib/chart-catalog";
 import {
   AGGREGATIONS,
+  ANSWER_KINDS,
+  COUNT_OPS,
   IMPLEMENTED_CHART_TYPES,
   SERIES_ROLES,
+  TRANSFORM_NAMES,
   type Aggregation,
+  type Answer,
   type Binning,
   type ChartSpec,
   type ChartType,
   type QuerySpec,
   type Series,
   type SeriesRole,
+  type Source,
+  type TimeRange,
+  type TransformName,
 } from "@/lib/query-spec";
 
 /**
@@ -74,11 +81,10 @@ const QUERY_SPEC_TOOL: Anthropic.Tool = {
     properties: {
       reason: {
         type: "string",
-        enum: ["ok", "record", "out_of_scope", "unmappable"],
+        enum: ["ok", "out_of_scope", "unmappable"],
         description:
-          "Classify the request. 'ok' = a normal time-series request (fill charts). " +
-          "'record' = a record/extreme/aggregate/scalar question (e.g. WANN war es am kältesten/wärmsten, höchster/niedrigster Wert, an welchem Tag/Zeitpunkt, Durchschnitt/Summe als EINE Zahl) — these are NOT yet supported, so DO NOT force a chart; return empty charts. " +
-          "'out_of_scope' = forecast, radar, warnings, or any data NOT in our own station history (we only have past measurements from this station) — return empty charts. " +
+          "Classify the request. 'ok' = answerable from our station history (fill charts; record/aggregate/count/comparison/degree-day questions are now ANSWERABLE via answer/derived/per-series-timeRange — emit those, do NOT reject). " +
+          "'out_of_scope' = forecast, radar, warnings, or any data NOT in our own station history (we only have past measurements) — return empty charts. " +
           "'unmappable' = gibberish, off-topic, or no matching catalog metric — return empty charts.",
       },
       charts: {
@@ -106,6 +112,50 @@ const QUERY_SPEC_TOOL: Anthropic.Tool = {
               enum: ["calendar", "hourOfDay×weekday"],
               description:
                 "Only for heatmap types: 'calendar' for heatmapCalendar, 'hourOfDay×weekday' for heatmapHourDay.",
+            },
+            answer: {
+              type: "object",
+              additionalProperties: false,
+              description:
+                "A prominent COMPUTED result shown alongside the context chart. Use for record/extreme, scalar aggregate, and count questions. The context chart still renders (usually 'line' over the same range).",
+              properties: {
+                kind: {
+                  type: "string",
+                  enum: ["extreme", "scalar", "count"],
+                  description:
+                    "'extreme' = record min/max + WHEN it occurred (wann/wärmste/kälteste/Rekord). 'scalar' = one aggregate number (Durchschnitt/insgesamt/Summe/Maximum). 'count' = number of days/hours meeting a threshold (wie viele Tage über/unter …).",
+                },
+                mode: {
+                  type: "string",
+                  enum: ["min", "max"],
+                  description: "extreme only: 'min' for coldest/lowest, 'max' for hottest/highest.",
+                },
+                agg: {
+                  type: "string",
+                  enum: ["mean", "sum", "min", "max"],
+                  description: "scalar only: which aggregate.",
+                },
+                metric: {
+                  type: "string",
+                  enum: METRIC_KEYS,
+                  description: "Catalog metric the answer is computed over.",
+                },
+                op: {
+                  type: "string",
+                  enum: [">", ">=", "<", "<="],
+                  description: "count only: comparison operator vs. threshold.",
+                },
+                threshold: {
+                  type: "number",
+                  description: "count only: the threshold value (e.g. 30 for >30 °C, 0 for frost <0).",
+                },
+                per: {
+                  type: "string",
+                  enum: ["day", "hour"],
+                  description: "count only: count days or hours. Usually 'day'.",
+                },
+              },
+              required: ["kind", "metric"],
             },
             timeRange: {
               type: "object",
@@ -156,8 +206,29 @@ const QUERY_SPEC_TOOL: Anthropic.Tool = {
                     description:
                       "Aggregation window like '1h' or '1d'. Optional; a sensible default is used if omitted.",
                   },
+                  transform: {
+                    type: "string",
+                    enum: [...TRANSFORM_NAMES],
+                    description:
+                      "DERIVED degree-day series: 'gdd' (Wachstumsgradtage), 'hdd' (Heizgradtage), 'cdd' (Kühlgradtage). Use the metric 'outdoor_temperature' as input; set base if the user gives one (GDD base 10, HDD/CDD base 18 by default).",
+                  },
+                  base: {
+                    type: "number",
+                    description: "Derived only: base temperature in °C (e.g. 10 for GDD, 18 for HDD).",
+                  },
+                  timeRange: {
+                    type: "object",
+                    additionalProperties: false,
+                    description:
+                      "Per-series time range OVERRIDE — use for year/period COMPARISON overlay: two series of the SAME metric, each with its own timeRange (e.g. Juni 2025 vs Juni 2024). Chart type 'line'.",
+                    properties: {
+                      start: { type: "string" },
+                      stop: { type: "string" },
+                    },
+                    required: ["start"],
+                  },
                 },
-                required: ["label", "metric", "aggregation"],
+                required: ["label", "metric"],
               },
             },
           },
@@ -210,21 +281,31 @@ SMART-VARIETY (Diagrammwahl):
 - ⚑ Akkumulator-Metriken (rainfall, evapotranspiration): aggregation 'sum' (Backend: difference+sum).
 - Gleiche Einheit + Vergleich → EINE Card mit mehreren series; verschiedene Themen → mehrere charts.
 ${nudge}
-ZEITRÄUME: relative Flux-Dauern wie -7d, -28d, -1d, -3d; stop üblicherweise 'now'.
+ZEITRÄUME: relative Flux-Dauern wie -7d, -28d, -1d, -3d; stop üblicherweise 'now'. Absolute ISO-Zeiten
+für konkrete Monate/Jahre (z. B. Juni 2025: start "2025-06-01T00:00:00Z", stop "2025-07-01T00:00:00Z").
+
+INTELLIGENZ — diese Fragen JETZT BEANTWORTEN (reason "ok", NICHT ablehnen):
+- REKORD/EXTREM ("wann war es am kältesten/wärmsten", "höchster/niedrigster Wert", "Rekord", "an welchem
+  Tag"): chart "line" über den Zeitraum + answer {kind:"extreme", mode:"min"|"max", metric}. Backend füllt
+  Wert + genauen Zeitpunkt + setzt einen markPoint.
+- SKALAR-AGGREGAT ("Durchschnitt", "insgesamt", "Summe", "Gesamtregen", "höchste/tiefste … als EINE Zahl"):
+  chart "line"/"bars" über den Zeitraum + answer {kind:"scalar", agg:"mean"|"sum"|"min"|"max", metric}.
+- COUNT/SCHWELLWERT ("wie viele Tage/Stunden … über/unter X", "Frosttage", "Hitzetage", "Regentage"):
+  chart "line" (oder heatmapCalendar) + answer {kind:"count", metric, op:">"|">="|"<"|"<=", threshold, per:"day"}.
+  Frost → outdoor_temperature < 0; Hitzetage → > 30; Regentage → rainfall > einem mm-Schwellwert.
+- VERGLEICH ("vs.", "im Vergleich", "dieses vs. letztes Jahr", "Juni 25 gegen Juni 24"): chart "line" mit
+  ZWEI series GLEICHER Metrik, jede mit EIGENEM timeRange (die zwei Perioden). Backend überlagert sie.
+- DERIVED Gradtage ("Heizgradtage/HDD", "Wachstumsgradtage/GDD", "Kühlgradtage/CDD"): chart "line", eine
+  series mit transform "hdd"|"gdd"|"cdd", metric "outdoor_temperature", ggf. base (GDD 10, HDD/CDD 18 °C).
 
 KLASSIFIZIERUNG (Feld "reason", IMMER setzen):
-- "ok": normale Zeitreihen-Anfrage (z. B. "Außentemperatur letzte Woche", "Regen heute") → charts füllen.
-- "record": Rekord-/Extrem-/Aggregat-/Skalar-Frage — z. B. "WANN war es am kältesten/wärmsten",
-  "höchster/niedrigster Wert", "an welchem Tag/Zeitpunkt", "Durchschnitt/Summe als EINE Zahl".
-  Solche Fragen sind NOCH NICHT unterstützt → KEIN Diagramm erzwingen, LEERES "charts"-Array.
-  Mappe diese NIEMALS auf eine Metrik-Zeitreihe (also NICHT einfach Min-Temperatur als Linie zeichnen).
-- "out_of_scope": Vorhersage, Radar, Warnungen oder Fremddaten — wir haben NUR die eigene
+- "ok": alles aus der eigenen Stationshistorie beantwortbar (inkl. Rekord/Aggregat/Count/Vergleich/Gradtage).
+- "out_of_scope": Vorhersage, Radar, Unwetterwarnung oder Fremddaten — wir haben NUR die eigene
   Stationshistorie (vergangene Messwerte). → LEERES "charts"-Array.
 - "unmappable": Kauderwelsch, off-topic oder keine passende Katalog-Metrik. → LEERES "charts"-Array.
 
-Bei "record"/"out_of_scope"/"unmappable" KEINE Default-Metrik erfinden. Im Zweifel zwischen "ok"
-und "record": wenn nach einem ZEITPUNKT oder EINEM EINZELWERT/Extrem gefragt wird → "record".
-Wähle einen prägnanten deutschen Titel und Labels. Antworte NUR über den Tool-Aufruf.`;
+Bei "out_of_scope"/"unmappable" KEINE Default-Metrik erfinden. Wähle prägnante deutsche Titel + Labels
+(für Vergleich: die Perioden als Labels). Antworte NUR über den Tool-Aufruf.`;
 }
 
 // ── Validation of the model output against catalog/enums ────────────────────
@@ -264,6 +345,22 @@ function validateRole(v: unknown): SeriesRole | undefined {
   throw new UnmappableQueryError("unmappable", `Invalid series role: ${String(v)}`);
 }
 
+function validateTimeRange(v: unknown): TimeRange | undefined {
+  if (typeof v !== "object" || v === null) return undefined;
+  const r = v as Record<string, unknown>;
+  const start = asString(r.start);
+  if (!start) return undefined;
+  const stop = asString(r.stop);
+  return { start, ...(stop ? { stop } : {}) };
+}
+
+function validateTransform(v: unknown): TransformName | undefined {
+  if (typeof v === "string" && (TRANSFORM_NAMES as readonly string[]).includes(v)) {
+    return v as TransformName;
+  }
+  return undefined;
+}
+
 function validateSeries(raw: unknown, chartIdx: number, seriesIdx: number): Series {
   if (typeof raw !== "object" || raw === null) {
     throw new UnmappableQueryError("unmappable", "Series is not an object");
@@ -278,18 +375,73 @@ function validateSeries(raw: unknown, chartIdx: number, seriesIdx: number): Seri
   const cat = getByKey(metric)!;
   const label = asString(r.label) ?? cat.labelDe;
   const window = asString(r.window);
+  const perSeriesTimeRange = validateTimeRange(r.timeRange);
+  const transform = validateTransform(r.transform);
+
+  // Derived (degree-day) series: transform + base over an input metric.
+  let source: Source;
+  if (transform) {
+    const base = typeof r.base === "number" ? r.base : undefined;
+    source = {
+      kind: "derived",
+      transform,
+      ...(base != null ? { base } : {}),
+      inputs: [{ metric, as: "t" }],
+    };
+  } else {
+    // Metric series — aggregation optional (defaults to the catalog default).
+    const aggregation =
+      r.aggregation == null
+        ? cat.defaultAggregation
+        : validateAggregation(r.aggregation);
+    source = {
+      kind: "metric",
+      metric,
+      aggregation,
+      ...(window ? { window } : {}),
+    };
+  }
 
   return {
     id: `c${chartIdx}s${seriesIdx}`,
     label,
     role: validateRole(r.role),
-    source: {
-      kind: "metric",
-      metric,
-      aggregation: validateAggregation(r.aggregation),
-      ...(window ? { window } : {}),
-    },
+    source,
+    ...(perSeriesTimeRange ? { timeRange: perSeriesTimeRange } : {}),
   };
+}
+
+/** Validate Claude's `answer` against the catalog/enums (spec-05). */
+function validateAnswer(v: unknown): Answer | undefined {
+  if (typeof v !== "object" || v === null) return undefined;
+  const r = v as Record<string, unknown>;
+  const kind = asString(r.kind);
+  if (!kind || !(ANSWER_KINDS as readonly string[]).includes(kind)) return undefined;
+
+  const metric = asString(r.metric);
+  if (!metric || !getByKey(metric)) {
+    throw new UnmappableQueryError("unmappable", `Answer references unknown metric: ${String(r.metric)}`);
+  }
+
+  if (kind === "extreme") {
+    const mode = r.mode === "min" || r.mode === "max" ? r.mode : "max";
+    return { kind: "extreme", mode, metric };
+  }
+  if (kind === "scalar") {
+    const agg =
+      r.agg === "mean" || r.agg === "sum" || r.agg === "min" || r.agg === "max"
+        ? r.agg
+        : "mean";
+    return { kind: "scalar", agg, metric };
+  }
+  // count
+  const op: ">" | ">=" | "<" | "<=" =
+    typeof r.op === "string" && (COUNT_OPS as readonly string[]).includes(r.op)
+      ? (r.op as ">" | ">=" | "<" | "<=")
+      : ">";
+  const threshold = typeof r.threshold === "number" ? r.threshold : 0;
+  const per: "day" | "hour" = r.per === "hour" ? "hour" : "day";
+  return { kind: "count", metric, op, threshold, per };
 }
 
 function validateChart(raw: unknown, idx: number): ChartSpec {
@@ -311,6 +463,7 @@ function validateChart(raw: unknown, idx: number): ChartSpec {
   }
   const series = seriesRaw.map((s, si) => validateSeries(s, idx, si));
   const binning = validateBinning(r.binning);
+  const answer = validateAnswer(r.answer);
 
   return {
     id: `c${idx}`,
@@ -319,6 +472,7 @@ function validateChart(raw: unknown, idx: number): ChartSpec {
     timeRange: { start, ...(stop ? { stop } : {}) },
     series,
     ...(binning ? { binning } : {}),
+    ...(answer ? { answer } : {}),
   };
 }
 
@@ -328,12 +482,10 @@ function validateQuerySpec(input: unknown, query: string): QuerySpec {
   }
   const r = input as Record<string, unknown>;
 
-  // Claude classified the request. Anything but "ok" → no chart, a 422 with the
-  // matching message. (Also handles legacy `unmappable:true`.)
+  // Claude classified the request. Only genuine out-of-scope / unmappable now
+  // yield no chart (a 422). Record/aggregate/count/comparison/derived are
+  // answerable and come back as 'ok' with the appropriate answer/derived spec.
   const reason = typeof r.reason === "string" ? r.reason : undefined;
-  if (reason === "record") {
-    throw new UnmappableQueryError("record", "Record/aggregate query");
-  }
   if (reason === "out_of_scope") {
     throw new UnmappableQueryError("out_of_scope", "Out-of-scope query");
   }

@@ -51,6 +51,9 @@ export function influxBucket(): string {
 /** A query API bound to the configured org/token. Throws on missing config. */
 export function getQueryApi(): QueryApi {
   const env = readInfluxEnv();
+  // Default client timeout — the long-range fix is RESOLUTION REDUCTION (tiered
+  // windows + extreme-aware coarse aggregation in flux.ts), so queries stay fast
+  // rather than relying on a longer wait.
   return new InfluxDB({ url: env.url, token: env.token }).getQueryApi(env.org);
 }
 
@@ -78,6 +81,21 @@ export async function runFluxPoints(flux: string): Promise<SeriesPoint[]> {
 }
 
 export type EntityRow = { entityId: string; t: string; v: number };
+
+/**
+ * Run a Flux query that produces a single scalar `_value` (e.g. after mean()/
+ * sum()/count() which DROP the `_time` column). Returns the first row's value,
+ * or null if there are no rows. Use this for scalar aggregates — runFluxPoints
+ * would skip these rows because they have no `_time`.
+ */
+export async function runFluxScalar(flux: string): Promise<number | null> {
+  const queryApi = getQueryApi();
+  for await (const { values, tableMeta } of queryApi.iterateRows(flux)) {
+    const row = tableMeta.toObject(values) as { _value?: number | null };
+    if (row._value != null) return row._value;
+  }
+  return null;
+}
 
 /**
  * Run a Flux query and collect `(entity_id, _time, _value)` rows. Used by the

@@ -11,6 +11,7 @@ import {
 
 import { ChartCard } from "@/components/cards/chart-card";
 import { SkeletonCard } from "@/components/cards/skeleton-card";
+import { PinnedGrid } from "@/components/pinned-grid";
 import { SearchBox } from "@/components/search-box";
 import {
   loadCards,
@@ -19,7 +20,7 @@ import {
   type StoredCard,
 } from "@/lib/card-store";
 import { assignSeriesColors } from "@/lib/colors";
-import type { AskResponse, ChartSpec } from "@/lib/query-spec";
+import type { AskResponse, ChartSpec, PinnedCard } from "@/lib/query-spec";
 
 /** A transient skeleton placeholder shown while /api/ask is in flight. */
 interface PendingCard {
@@ -50,15 +51,14 @@ const BREAKPOINTS: Breakpoints = { lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }
 const ROW_HEIGHT = 48;
 const DEFAULT_SIZE = { w: 6, h: 8, minW: 3, minH: 4 };
 
-/** Place a new card below existing ones (two-per-row on wide screens). */
-function nextLayoutPosition(existing: StoredCard[]): CardLayout {
-  if (existing.length === 0)
-    return { x: 0, y: 0, w: DEFAULT_SIZE.w, h: DEFAULT_SIZE.h };
-  const maxY = existing.reduce((m, c) => Math.max(m, c.layout.y + c.layout.h), 0);
-  const x = existing.length % 2 === 0 ? 0 : DEFAULT_SIZE.w;
-  const y =
-    existing.length % 2 === 0 ? maxY : Math.max(0, maxY - DEFAULT_SIZE.h);
-  return { x, y, w: DEFAULT_SIZE.w, h: DEFAULT_SIZE.h };
+/** A top-of-grid layout box (new cards are prepended, spec correction §6). */
+function topLayout(): CardLayout {
+  return { x: 0, y: 0, w: DEFAULT_SIZE.w, h: DEFAULT_SIZE.h };
+}
+
+/** Shift every existing card down by `rows` so new top cards have room. */
+function shiftDown<T extends { layout: CardLayout }>(cards: T[], rows: number): T[] {
+  return cards.map((c) => ({ ...c, layout: { ...c.layout, y: c.layout.y + rows } }));
 }
 
 /**
@@ -139,6 +139,7 @@ export default function DashboardGrid() {
 
   const [cards, setCards] = useState<StoredCard[]>([]);
   const [pendingCards, setPendingCards] = useState<PendingCard[]>([]);
+  const [pinnedCards, setPinnedCards] = useState<PinnedCard[]>([]);
   const [regeneratingIds, setRegeneratingIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -150,14 +151,97 @@ export default function DashboardGrid() {
   // 6-col `sm`), and persisting that would clobber the canonical wide arrangement.
   const breakpointRef = useRef<string>("lg");
 
-  // Rehydrate from localStorage after mount (client-only → no SSR mismatch).
+  // When WE mutate the card set (add/prepend/regenerate/remove), react-grid-layout
+  // fires onLayoutChange with its own freshly-(re)compacted layout — which can
+  // place a just-added card at the BOTTOM, clobbering our intended prepend. Ignore
+  // onLayoutChange during such a programmatic mutation; only user drags/resizes
+  // (which happen when this flag is false) should persist. Cleared on the next tick.
+  const mutatingRef = useRef(false);
+  const mutationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const beginMutation = useCallback(() => {
+    mutatingRef.current = true;
+    // Release after RGL has committed the new children and emitted its sync
+    // onLayoutChange(s). A short delay covers the re-render + layout effect; well
+    // within "instant" but long enough to swallow RGL's re-compaction callback.
+    if (mutationTimer.current) clearTimeout(mutationTimer.current);
+    mutationTimer.current = setTimeout(() => {
+      mutatingRef.current = false;
+      mutationTimer.current = null;
+    }, 80);
+  }, []);
+
+  // Rehydrate PRIVATE cards from localStorage after mount (client-only).
   useEffect(() => {
     setCards(loadCards());
   }, []);
 
+  // Fetch GLOBAL pinned cards on every load (spec-05 §7) — visible to everyone.
+  const refreshPinned = useCallback(async () => {
+    try {
+      const res = await fetch("/api/pinned");
+      if (!res.ok) return;
+      const data = (await res.json()) as { cards?: PinnedCard[] };
+      setPinnedCards(Array.isArray(data.cards) ? data.cards : []);
+    } catch {
+      // Network/store error → leave pins empty; non-fatal.
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshPinned();
+  }, [refreshPinned]);
+
   const persist = useCallback((next: StoredCard[]) => {
     saveCards(next);
   }, []);
+
+  // Pin a PRIVATE card → move it to the GLOBAL set (no duplicate): POST to
+  // /api/pinned, remove from localStorage, refresh the pinned list (spec-05 §7).
+  const handlePin = useCallback(
+    async (id: string) => {
+      const card = cards.find((c) => c.id === id);
+      if (!card) return;
+      try {
+        const res = await fetch("/api/pinned", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: card.id,
+            spec: card.spec,
+            originQuery: card.originQuery,
+            layout: card.layout,
+          }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        // Remove from the private (local) set so it isn't shown twice.
+        setCards((prev) => {
+          const next = prev.filter((c) => c.id !== id);
+          persist(next);
+          return next;
+        });
+        await refreshPinned();
+      } catch (e) {
+        setError(e instanceof Error ? `Anpinnen fehlgeschlagen: ${e.message}` : "Anpinnen fehlgeschlagen");
+      }
+    },
+    [cards, persist, refreshPinned],
+  );
+
+  // Unpin a GLOBAL card → remove it from the server set (default: it disappears).
+  const handleUnpin = useCallback(
+    async (id: string) => {
+      try {
+        const res = await fetch(`/api/pinned/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        await refreshPinned();
+      } catch (e) {
+        setError(e instanceof Error ? `Lösen fehlgeschlagen: ${e.message}` : "Lösen fehlgeschlagen");
+      }
+    },
+    [refreshPinned],
+  );
 
   // Submit free text → show a skeleton immediately → /api/ask → replace the
   // skeleton with the returned card(s), or remove it and surface the error.
@@ -166,14 +250,14 @@ export default function DashboardGrid() {
       setPending(true);
       setError(null);
 
-      // Insert a skeleton placeholder right away (spec §6).
+      // Insert a skeleton placeholder right away at the TOP (spec correction §6).
       const skeletonId = `skeleton-${Date.now()}-${Math.random()
         .toString(36)
         .slice(2, 7)}`;
-      const skeletonLayout = nextLayoutPosition(cards);
+      beginMutation();
       setPendingCards((prev) => [
+        { id: skeletonId, originQuery: query, layout: topLayout() },
         ...prev,
-        { id: skeletonId, originQuery: query, layout: skeletonLayout },
       ]);
 
       const dropSkeleton = () =>
@@ -197,24 +281,33 @@ export default function DashboardGrid() {
         }
         const data = (await res.json()) as AskResponse;
 
-        // Replace the skeleton with the real cards atomically.
+        // Replace the skeleton with the real cards, PREPENDED to the top.
+        // Flag the mutation so RGL's sync onLayoutChange doesn't clobber y:0.
+        beginMutation();
         dropSkeleton();
         setCards((prev) => {
           const additions: StoredCard[] = [];
+          let yCursor = 0;
           for (const chart of data.charts) {
-            const layout = nextLayoutPosition([...prev, ...additions]);
             const id = `${Date.now()}-${chart.spec.id}-${Math.random()
               .toString(36)
               .slice(2, 7)}`;
+            // Stack the new cards two-per-row at the top.
+            const even = additions.length % 2 === 0;
+            const x = even ? 0 : DEFAULT_SIZE.w;
             additions.push({
               id,
               // Re-id the spec (unique /api/chart yields) + assign random colours.
               spec: colorizeSpec({ ...chart.spec, id }),
               originQuery: data.query,
-              layout,
+              layout: { x, y: yCursor, w: DEFAULT_SIZE.w, h: DEFAULT_SIZE.h },
             });
+            if (!even) yCursor += DEFAULT_SIZE.h; // advance a row after each pair
           }
-          const next = [...prev, ...additions];
+          // Push existing cards below the freshly added block, then prepend.
+          const blockRows =
+            Math.ceil(additions.length / 2) * DEFAULT_SIZE.h;
+          const next = [...additions, ...shiftDown(prev, blockRows)];
           persist(next);
           return next;
         });
@@ -225,7 +318,7 @@ export default function DashboardGrid() {
         setPending(false);
       }
     },
-    [persist, cards],
+    [persist, cards, beginMutation],
   );
 
   const handleRemove = useCallback(
@@ -310,6 +403,10 @@ export default function DashboardGrid() {
 
   const handleLayoutChange = useCallback(
     (current: Layout) => {
+      // Ignore the onLayoutChange RGL fires while WE are mutating the card set
+      // (add/prepend/regenerate/remove) — that is RGL's own re-compaction, not a
+      // user edit, and adopting it would clobber the intended prepend position.
+      if (mutatingRef.current) return;
       // Only persist edits made on the canonical wide breakpoint; ignore the
       // auto-reflow RGL emits when a narrower breakpoint stacks the cards.
       if (breakpointRef.current !== "lg") return;
@@ -350,20 +447,30 @@ export default function DashboardGrid() {
           pending={pending}
           error={error}
         />
+        {/* Global pins still show for a fresh visitor with no private cards. */}
+        <PinnedGrid
+          cards={pinnedCards}
+          width={width}
+          ready={ready}
+          onUnpin={handleUnpin}
+        />
       </div>
     );
   }
 
-  // Layout items for real cards + transient skeletons. Skeletons are not
-  // draggable (no drag handle) and never persisted.
+  // Layout items for real cards + transient skeletons. Skeletons sit at the TOP
+  // (each at y:0, stacked) and the real cards are shifted DOWN by the skeleton
+  // block height in the live layout — so a pending card visibly prepends in the
+  // same render (no collision, no reload). Skeletons are static + never persisted.
+  const skeletonRows = pendingCards.length * DEFAULT_SIZE.h;
   const layoutItems: LayoutItem[] = [
-    ...toLayoutItems(cards),
-    ...pendingCards.map((p) => ({
+    ...toLayoutItems(cards).map((l) => ({ ...l, y: l.y + skeletonRows })),
+    ...pendingCards.map((p, idx) => ({
       i: p.id,
-      x: p.layout.x,
-      y: p.layout.y,
-      w: p.layout.w,
-      h: p.layout.h,
+      x: 0,
+      y: idx * DEFAULT_SIZE.h,
+      w: DEFAULT_SIZE.w,
+      h: DEFAULT_SIZE.h,
       minW: DEFAULT_SIZE.minW,
       minH: DEFAULT_SIZE.minH,
       static: true,
@@ -412,6 +519,7 @@ export default function DashboardGrid() {
                   originQuery={card.originQuery}
                   onRemove={() => handleRemove(card.id)}
                   onRegenerate={() => handleRegenerate(card.id)}
+                  onPin={() => handlePin(card.id)}
                   regenerating={false}
                 />
               </div>
@@ -424,6 +532,14 @@ export default function DashboardGrid() {
           ))}
         </ResponsiveGridLayout>
       )}
+
+      {/* Section 4: global pinned cards, below the private grid. */}
+      <PinnedGrid
+        cards={pinnedCards}
+        width={width}
+        ready={ready}
+        onUnpin={handleUnpin}
+      />
     </div>
   );
 }

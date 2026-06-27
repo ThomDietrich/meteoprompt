@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 
 import { KennwerteRow } from "@/components/kennwerte-row";
+import { SectionDivider } from "@/components/section-divider";
 
 // react-grid-layout + ECharts need the DOM — load grids client-only to avoid
 // hydration mismatches (spec §10).
@@ -29,21 +30,19 @@ export default function Home() {
       {/* Kennwert-Zeile: 12 aktuelle Werte (spec §4). */}
       <KennwerteRow />
 
-      {/* Dynamischer Freitext-Bereich aus Iteration 2 (spec §1). */}
+      {/*
+        Sections 2–4 (spec-05 §7): search + private cards, a divider, then the
+        global pinned cards — all owned by DashboardGrid so pinning can move a
+        card private→global atomically.
+      */}
       <section className="mt-6">
         <DashboardGrid />
       </section>
 
-      {/* Trennlinie: dynamischer Bereich ↑ / fixer Bereich ↓ (spec §5). */}
-      <div className="my-8 flex items-center gap-3" role="separator">
-        <span className="h-px flex-1 bg-brand-blue/20" />
-        <span className="rounded-full bg-brand-blue/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-brand-blue dark:text-sky-300">
-          Stations-Dashboard
-        </span>
-        <span className="h-px flex-1 bg-brand-blue/20" />
-      </div>
+      {/* Trennlinie zum fixen Bereich (5). */}
+      <SectionDivider label="Stations-Dashboard" />
 
-      {/* Permanentes Dashboard: 10 feste Charts (spec §5). */}
+      {/* Permanentes Dashboard: feste Charts (6). */}
       <PermanentDashboard />
     </main>
   );

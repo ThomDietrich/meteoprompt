@@ -48,25 +48,30 @@ function formatValue(v: number | null, unit: string): string {
   });
 }
 
-function Pill({ kv }: { kv: KennwertValue }) {
+/**
+ * One borderless cell in the instrument panel: a muted brand icon, an uppercase
+ * label, and the tabular-nums value. Separated from neighbours by the panel's
+ * hairline dividers (no per-cell border/box) — calm, not 12 loud cards.
+ */
+function Cell({ kv }: { kv: KennwertValue }) {
   const def = KENNWERTE.find((k) => k.key === kv.key);
   const Icon = def ? (ICONS[def.icon] ?? Thermometer) : Thermometer;
   const valueText = formatValue(kv.value, kv.unit);
   // Show the unit only when there is a value and the unit is meaningful ("–" = none).
-  const unitText =
-    kv.value == null || kv.unit === "–" ? "" : ` ${kv.unit}`;
+  const unitText = kv.value == null || kv.unit === "–" ? "" : ` ${kv.unit}`;
   const compassText = kv.compass ? ` ${kv.compass}` : "";
 
   return (
-    <div className="flex items-center gap-2.5 rounded-2xl border border-brand-blue/10 bg-white/80 px-3 py-2.5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-blue/20 hover:shadow-md dark:border-white/10 dark:bg-slate-900/70">
-      <span className="inline-flex shrink-0 items-center justify-center rounded-xl bg-brand-blue/10 p-1.5 dark:bg-brand-blue/25">
-        <Icon className="h-4 w-4 text-brand-blue dark:text-sky-400" aria-hidden />
-      </span>
+    <div className="flex items-center gap-2.5 px-3.5 py-3 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40">
+      <Icon
+        className="h-4 w-4 shrink-0 text-brand-blue opacity-70 dark:text-sky-400"
+        aria-hidden
+      />
       <div className="min-w-0 leading-tight">
-        <div className="truncate text-[11px] text-brand-ink/60 dark:text-slate-400">
+        <div className="truncate text-[11px] font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
           {kv.label}
         </div>
-        <div className="text-sm font-semibold tabular-nums text-brand-ink dark:text-slate-100">
+        <div className="text-sm font-semibold tabular-nums text-slate-800 dark:text-slate-100">
           {valueText}
           {unitText}
           {compassText}
@@ -116,32 +121,42 @@ export function KennwerteRow() {
     };
   }, []);
 
+  // One calm "instrument panel": a single rounded container holding the cells,
+  // separated by hairline dividers (not 12 loud boxes).
+  const panelClass =
+    "overflow-hidden rounded-2xl border border-black/5 bg-white/70 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-900/60";
+  const gridClass =
+    "grid grid-cols-2 divide-x divide-y divide-black/5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 dark:divide-white/5";
+
   if (state.status === "loading") {
     return (
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-        {KENNWERTE.map((k) => (
-          <div
-            key={k.key}
-            className="h-[52px] animate-pulse rounded-lg bg-slate-200/60 dark:bg-slate-700/40"
-          />
-        ))}
+      <div className={panelClass}>
+        <div className={gridClass}>
+          {KENNWERTE.map((k) => (
+            <div key={k.key} className="px-3.5 py-3">
+              <div className="h-[34px] animate-pulse rounded bg-slate-200/60 dark:bg-slate-700/40" />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
 
   if (state.status === "error") {
     return (
-      <div className="rounded-lg border border-amber-300/50 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/30 dark:text-amber-300">
+      <div className="rounded-2xl border border-amber-300/50 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/30 dark:text-amber-300">
         Aktuelle Werte konnten nicht geladen werden: {state.message}
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-      {state.values.map((kv) => (
-        <Pill key={kv.key} kv={kv} />
-      ))}
+    <div className={panelClass}>
+      <div className={gridClass}>
+        {state.values.map((kv) => (
+          <Cell key={kv.key} kv={kv} />
+        ))}
+      </div>
     </div>
   );
 }

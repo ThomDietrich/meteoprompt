@@ -15,9 +15,9 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
-  title: "wetter.nurzen.de – Dein Wetter-Chat",
+  title: "Wetterchatty – Das interaktive Wetterportal für Nurzen",
   description:
-    "Dashboard und Chat für Wetter-Zeitreihen der eigenen Wetterstation",
+    "Das interaktive Wetterportal für Nurzen — Dashboard und Chat für die Zeitreihen der eigenen Wetterstation",
 };
 
 export default function RootLayout({

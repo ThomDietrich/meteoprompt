@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { deriveQuerySpec, UnmappableQueryError } from "@/lib/claude";
-import { ChartShapeError, resolveChartSeries } from "@/lib/flux";
+import { ChartShapeError, resolveChart } from "@/lib/flux";
+import { logFailedQuery } from "@/lib/query-log";
 import type { AskResponse, ChartResult } from "@/lib/query-spec";
 
 // Never run at build time — Claude + InfluxDB are called per request at runtime,
@@ -42,13 +43,12 @@ export async function POST(request: Request) {
     charts = spec.charts;
   } catch (error) {
     if (error instanceof UnmappableQueryError) {
-      // Representative, honest message per category (spec-03 §7).
+      // Representative, honest message per category (spec-03 §7 / spec-05 §6).
       const detail =
-        error.reason === "record"
-          ? "Solche Rekord-/Extrem-Fragen (z. B. „wann war es am kältesten“) kann ich noch nicht beantworten — das kommt in einer späteren Ausbaustufe."
-          : error.reason === "out_of_scope"
-            ? "Dazu habe ich keine Daten — ich kenne nur die Historie der eigenen Wetterstation (keine Vorhersage, kein Radar, keine Fremddaten)."
-            : "Konnte die Anfrage nicht zuordnen — bitte präzisieren (z. B. „Außentemperatur der letzten 7 Tage“).";
+        error.reason === "out_of_scope"
+          ? "Dazu habe ich keine Daten — ich kenne nur die Historie der eigenen Wetterstation (keine Vorhersage, kein Radar, keine Fremddaten)."
+          : "Konnte die Anfrage nicht zuordnen — bitte präzisieren (z. B. „Außentemperatur der letzten 7 Tage“).";
+      await logFailedQuery({ query: q, reason: error.reason, detail, route: "/api/ask" });
       return NextResponse.json(
         { error: "unmappable_query", reason: error.reason, detail },
         { status: 422 },
@@ -57,19 +57,20 @@ export async function POST(request: Request) {
     const message = error instanceof Error ? error.message : "Unknown LLM error";
     const status = /Missing ANTHROPIC_API_KEY/.test(message) ? 503 : 500;
     console.error("[api/ask] LLM step failed:", message);
+    await logFailedQuery({ query: q, reason: "llm_error", detail: message, route: "/api/ask" });
     return NextResponse.json(
       { error: "llm_error", detail: message },
       { status },
     );
   }
 
-  // 2) Resolve each ChartSpec to data via Flux.
+  // 2) Resolve each ChartSpec to data (+ optional computed answer) via Flux.
   try {
     const results: ChartResult[] = await Promise.all(
-      charts.map(async (spec) => ({
-        spec,
-        series: await resolveChartSeries(spec),
-      })),
+      charts.map(async (spec) => {
+        const { series, answer } = await resolveChart(spec);
+        return { spec, series, ...(answer ? { answer } : {}) };
+      }),
     );
 
     const payload: AskResponse = { query: q, charts: results };
@@ -82,6 +83,7 @@ export async function POST(request: Request) {
 
     // Claude chose a chart type its data shape can't satisfy → clean 422 (no crash).
     if (error instanceof ChartShapeError) {
+      await logFailedQuery({ query: q, reason: "chart_shape", detail: message, route: "/api/ask" });
       return NextResponse.json(
         {
           error: "chart_shape",
@@ -93,6 +95,7 @@ export async function POST(request: Request) {
     }
     const status = /Missing InfluxDB configuration/.test(message) ? 503 : 500;
     console.error("[api/ask] data step failed:", message);
+    await logFailedQuery({ query: q, reason: "server_error", detail: message, route: "/api/ask" });
     return NextResponse.json(
       { error: "data_error", detail: message },
       { status },

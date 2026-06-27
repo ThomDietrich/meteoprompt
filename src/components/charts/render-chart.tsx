@@ -16,16 +16,22 @@ import { BoxplotChart } from "@/components/charts/boxplot-chart";
 import { RadarChart } from "@/components/charts/radar-chart";
 import { ViolinChart } from "@/components/charts/violin-chart";
 import { ThemeRiverChart } from "@/components/charts/theme-river-chart";
-import type { ChartSpec, ResolvedSeries } from "@/lib/query-spec";
+import type {
+  ChartSpec,
+  ResolvedAnswer,
+  ResolvedSeries,
+} from "@/lib/query-spec";
 
 /**
  * Single source of truth for the chart-type → renderer switch. Used by both the
  * user ChartCard and the permanent dashboard so every type renders identically.
+ * An optional `answer` lets an extreme answer place a markPoint on the line.
  */
 export function renderChart(
   spec: ChartSpec,
   series: ResolvedSeries[],
   chartRef: React.Ref<EChartsReact>,
+  answer?: ResolvedAnswer,
 ) {
   switch (spec.chart) {
     case "bars":
@@ -55,8 +61,19 @@ export function renderChart(
     case "themeRiver":
       return <ThemeRiverChart ref={chartRef} series={series} />;
     case "line":
-    default:
-      return <LineChart ref={chartRef} series={series} />;
+    default: {
+      // An extreme answer with a timestamp → highlight it on the line.
+      const extreme =
+        answer?.kind === "extreme" && answer.value != null && answer.t
+          ? {
+              t: answer.t,
+              value: answer.value,
+              unit: answer.unit,
+              label: answer.label,
+            }
+          : undefined;
+      return <LineChart ref={chartRef} series={series} extreme={extreme} />;
+    }
   }
 }
 

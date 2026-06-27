@@ -24,8 +24,13 @@ services:
       #    by the host mount (named/anonymous volumes seed from the image).
       - node_modules:/app/node_modules
       - next_cache:/app/.next
+      # Server-side runtime data (pinned cards, failed-query log). A named
+      # volume so it persists across rebuilds and isn't tied to the host tree
+      # (overrides the ./:/app bind-mount for this nested path). spec-05 §8.
+      - app_data:/app/data
     command: npm run dev
 
 volumes:
   node_modules:
   next_cache:
+  app_data:

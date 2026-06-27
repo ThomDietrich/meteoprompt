@@ -22,7 +22,27 @@ export interface ChartSpec {
   timeRange: TimeRange; // shared default for the series
   series: Series[]; // 1..N series in ONE chart
   binning?: Binning; // spec-04: for heatmap-style charts
+  answer?: Answer; // spec-05: a prominent computed result alongside the chart
 }
+
+/**
+ * A computed "answer" requested alongside the context chart (spec-05 §3).
+ * The backend fills in the value(s); the card renders it as a prominent KPI
+ * (and, for `extreme`, a markPoint on the context line).
+ */
+export type Answer =
+  | { kind: "extreme"; mode: "min" | "max"; metric: string }
+  | { kind: "scalar"; agg: "mean" | "sum" | "min" | "max"; metric: string }
+  | {
+      kind: "count";
+      metric: string;
+      op: ">" | ">=" | "<" | "<=";
+      threshold: number;
+      per: "day" | "hour";
+    };
+
+export const ANSWER_KINDS = ["extreme", "scalar", "count"] as const;
+export const COUNT_OPS = [">", ">=", "<", "<="] as const;
 
 export type ChartType =
   // v2/03
@@ -115,12 +135,18 @@ export interface MetricSource {
 }
 
 export interface DerivedSource {
-  // RESERVED for Iteration 3+ (not v2)
+  // spec-05: server-side computed quantities (degree-days). No LLM math —
+  // only a named transform + parameters; the registry does the maths.
   kind: "derived";
-  transform: string;
-  inputs: { metric: string; as: string }[];
+  transform: TransformName;
+  base?: number; // e.g. GDD base 10 °C, HDD base 18 °C
+  inputs: { metric: string; as: string }[]; // usually outdoor_temperature
   unit?: string;
 }
+
+/** Named server-side transforms (degree-day registry). */
+export type TransformName = "gdd" | "hdd" | "cdd";
+export const TRANSFORM_NAMES = ["gdd", "hdd", "cdd"] as const;
 
 export type Aggregation = "mean" | "sum" | "min" | "max" | "none";
 
@@ -206,10 +232,25 @@ export interface ResolvedSeries {
   shaped?: ShapedData; // present for non-time-series chart types
 }
 
-/** One chart with its spec and the resolved data series. */
+/**
+ * A resolved answer (spec-05): the backend-computed result rendered as a KPI.
+ * `value` is the number; `t` is the timestamp for an extreme; `count` for a
+ * count answer; `unit` + `label` drive the display.
+ */
+export interface ResolvedAnswer {
+  kind: "extreme" | "scalar" | "count";
+  label: string;
+  unit: string;
+  value: number | null; // extreme/scalar value
+  t?: string | null; // extreme timestamp (ISO)
+  count?: number | null; // count answer
+}
+
+/** One chart with its spec, resolved data series, and optional computed answer. */
 export interface ChartResult {
   spec: ChartSpec;
   series: ResolvedSeries[];
+  answer?: ResolvedAnswer;
 }
 
 /** Response of POST /api/ask. */
@@ -222,4 +263,24 @@ export interface AskResponse {
 export interface ChartResponse {
   spec: ChartSpec;
   series: ResolvedSeries[];
+  answer?: ResolvedAnswer;
+}
+
+/** Layout box for a card in the grid. */
+export interface CardBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * A card persisted on the server as a GLOBAL pin (spec-05 §7). Shared shape
+ * between the pin routes and the client. (Private cards live in localStorage.)
+ */
+export interface PinnedCard {
+  id: string;
+  spec: ChartSpec;
+  originQuery: string;
+  layout: CardBox;
 }

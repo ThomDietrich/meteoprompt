@@ -10,11 +10,19 @@ import {
   influxBucket,
   runFluxEntityRows,
   runFluxPoints,
+  runFluxScalar,
 } from "@/lib/influx";
 import { KENNWERTE, type KennwertValue } from "@/lib/kennwerte";
+import {
+  applyTransform,
+  defaultBase,
+  isTransform,
+} from "@/lib/transforms";
 import type {
+  Answer,
   ChartSpec,
   ChartType,
+  ResolvedAnswer,
   ResolvedSeries,
   Series,
   SeriesPoint,
@@ -52,6 +60,17 @@ const TZ_PREAMBLE =
   'import "timezone"\noption location = timezone.location(name: "Europe/Berlin")\n';
 
 /**
+ * Terminal sort appended as the FINAL pipe of every TIME-SERIES Flux query (the
+ * convention). Flux does not guarantee chronological output — `aggregateWindow`
+ * over a long, multi-shard range can return groups out of order (ascending then
+ * jumping back to the earliest), which made a connected line/area chart draw a
+ * phantom arc from the last point to the first. Sorting by `_time` at the source
+ * guarantees chronological order. Scalar/single-row queries (mean/sum/count/last)
+ * don't need it — it's a harmless no-op there, so we simply omit it.
+ */
+const TERMINAL_SORT = '|> sort(columns: ["_time"])';
+
+/**
  * Validate a relative Flux duration (`-7d`, `-28d`, `now`) or an absolute ISO time.
  * Rejects anything else so the LLM can't inject arbitrary Flux into range().
  */
@@ -75,6 +94,102 @@ function sanitizeWindow(window: string | undefined, fallback: string): string {
   if (!window) return fallback;
   const w = window.trim();
   return WINDOW_DURATION.test(w) ? w : fallback;
+}
+
+// ── Adaptive downsampling (long-range query timeout fix) ─────────────────────
+
+const MS = {
+  s: 1000,
+  m: 60_000,
+  h: 3_600_000,
+  d: 86_400_000,
+  w: 604_800_000,
+  mo: 2_592_000_000, // ≈30d
+  y: 31_536_000_000, // ≈365d
+} as const;
+
+/** Duration of a Flux window/relative token (e.g. "1h", "30m", "2d") in ms. */
+function durationMs(token: string): number | null {
+  const m = /^-?(\d+)(ns|us|µs|ms|s|m|h|d|w|mo|y)$/.exec(token.trim());
+  if (!m) return null;
+  const n = Number(m[1]);
+  const unit = m[2] as keyof typeof MS;
+  const base = MS[unit];
+  return base ? n * base : null;
+}
+
+/**
+ * Estimate the span (ms) covered by a TimeRange. Handles relative starts like
+ * `-730d` (→ now - 730d) and absolute ISO start/stop. Returns null if unknown.
+ */
+function rangeSpanMs(timeRange: TimeRange): number | null {
+  const start = timeRange.start.trim();
+  const stop = (timeRange.stop ?? "now").trim();
+
+  // Stop is usually now(); resolve to a timestamp for the math.
+  const stopMs =
+    stop === "now" || stop === "now()" || stop === ""
+      ? Date.now()
+      : Number.isNaN(Date.parse(stop))
+        ? Date.now()
+        : Date.parse(stop);
+
+  // Relative start like "-730d" → span is just that duration (when stop ≈ now).
+  if (/^-\d+/.test(start)) {
+    const d = durationMs(start);
+    if (d != null) return d;
+  }
+  // Absolute ISO start → stopMs - startMs.
+  if (!Number.isNaN(Date.parse(start))) {
+    return Math.max(0, stopMs - Date.parse(start));
+  }
+  return null;
+}
+
+/** Candidate aggregate windows, coarsest-first selection happens by scanning up. */
+const WINDOW_LADDER = [
+  "1m",
+  "5m",
+  "15m",
+  "30m",
+  "1h",
+  "2h",
+  "3h",
+  "6h",
+  "12h",
+  "1d",
+  "2d",
+  "7d",
+  "30d",
+] as const;
+
+/**
+ * Coarsen the requested aggregate window so a query over `timeRange` yields at
+ * most `maxPoints` buckets — the fix for long-range transfer-heavy queries
+ * (e.g. a −730d line at 1h ≈ 17.5k points → 1d ≈ 730). NEVER goes FINER than the
+ * requested window, so short ranges keep their fine resolution unchanged.
+ */
+function adaptiveWindow(
+  timeRange: TimeRange,
+  requestedWindow: string,
+  maxPoints = 800,
+): string {
+  const span = rangeSpanMs(timeRange);
+  const reqMs = durationMs(requestedWindow);
+  if (span == null || reqMs == null || reqMs <= 0) return requestedWindow;
+
+  // Already coarse enough at the requested window? Keep it.
+  if (span / reqMs <= maxPoints) return requestedWindow;
+
+  // Otherwise climb the ladder to the smallest window that is BOTH ≥ requested
+  // and yields ≤ maxPoints buckets.
+  for (const w of WINDOW_LADDER) {
+    const wMs = durationMs(w);
+    if (wMs == null || wMs < reqMs) continue; // never finer than requested
+    if (span / wMs <= maxPoints) return w;
+  }
+  // Range so large even 30d exceeds the cap → use the coarsest ladder step.
+  return WINDOW_LADDER[WINDOW_LADDER.length - 1];
 }
 
 /** Map a v2 aggregation to its Flux function name. */
@@ -111,16 +226,22 @@ function buildSeriesFlux(
   |> filter(fn: (r) => r["entity_id"] == "${cat.entityId}")
   |> filter(fn: (r) => r["_field"] == "value")`;
 
+  // CONVENTION: every time-series query ends with `sort(columns: ["_time"])` as
+  // its final pipe before yield — guarantees chronological order. Unsorted Flux
+  // results (aggregateWindow over multi-shard ranges) caused a phantom first↔last
+  // connecting line/arc on the chart. See TERMINAL_SORT.
   // Accumulator metrics (rainfall, evapotranspiration): differentiate the daily
   // counter (nonNegative caps the midnight reset) then sum over the window.
   if (cat.rainCounter) {
-    const window = sanitizeWindow(
+    const requested = sanitizeWindow(
       series.source.window ?? cat.defaultWindow,
       cat.defaultWindow,
     );
+    const window = adaptiveWindow(timeRange, requested);
     return `${base}
   |> difference(nonNegative: true)
   |> aggregateWindow(every: ${window}, fn: sum, createEmpty: false)
+  ${TERMINAL_SORT}
   |> yield(name: "${series.id}")`;
   }
 
@@ -128,15 +249,18 @@ function buildSeriesFlux(
   const agg = series.source.aggregation;
   if (agg === "none") {
     return `${base}
+  ${TERMINAL_SORT}
   |> yield(name: "${series.id}")`;
   }
 
-  const window = sanitizeWindow(
+  const requested = sanitizeWindow(
     series.source.window ?? cat.defaultWindow,
     cat.defaultWindow,
   );
+  const window = adaptiveWindow(timeRange, requested);
   return `${base}
   |> aggregateWindow(every: ${window}, fn: ${aggregationFn(agg)}, createEmpty: false)
+  ${TERMINAL_SORT}
   |> yield(name: "${series.id}")`;
 }
 
@@ -148,6 +272,15 @@ function buildSeriesFlux(
 export async function resolveChartSeries(
   spec: ChartSpec,
 ): Promise<ResolvedSeries[]> {
+  const bucket = influxBucket();
+
+  // Derived series (degree-days) — resolve each via the transform registry.
+  if (spec.series.some((s) => s.source.kind === "derived")) {
+    return Promise.all(
+      spec.series.map((series) => resolveDerivedSeries(bucket, series, spec)),
+    );
+  }
+
   // 1) Validate the chart type is satisfiable by the requested series shape.
   const shapeError = validateChartDataShape(spec.chart, {
     seriesCount: spec.series.length,
@@ -171,13 +304,320 @@ export async function resolveChartSeries(
     return { series, cat };
   });
 
-  // 3) Dispatch by chart type to the matching data-shaping resolver.
+  // 3) Extreme-answer context: instead of a raw mean line, draw a coarse
+  // daily-MIN envelope for a "coldest"/min query or daily-MAX for a "hottest"/max
+  // query — it actually shows the troughs/peaks the answer marks. A coarse series
+  // is always returned (the window widens with the range), never value-only.
+  if (
+    spec.answer?.kind === "extreme" &&
+    spec.chart === "line" &&
+    resolvedCats.length === 1
+  ) {
+    return resolveExtremeContext(bucket, resolvedCats[0], spec, spec.answer.mode);
+  }
+
+  // 4) Comparison overlay: a line chart whose series carry their OWN timeRange
+  // (e.g. "Juni dieses vs. letztes Jahr"). Resolve each on its own range, then
+  // rebase the x-axis to a shared relative axis so the periods overlap.
+  if (
+    spec.chart === "line" &&
+    spec.series.length >= 2 &&
+    spec.series.some((s) => s.timeRange)
+  ) {
+    return resolveComparison(bucket, resolvedCats, spec);
+  }
+
+  // 5) Dispatch by chart type to the matching data-shaping resolver.
   return shapeChart(spec, resolvedCats);
+}
+
+/**
+ * Resolve a chart's series AND its optional computed answer. For an extreme-line
+ * spec this runs a SINGLE windowed scan (the envelope) and derives the answer
+ * from it — avoiding a second raw min()/max() scan so even multi-year extreme
+ * queries stay under the default timeout. Other cases resolve series + answer
+ * separately (in parallel). The routes call this instead of the two resolvers.
+ */
+export async function resolveChart(
+  spec: ChartSpec,
+): Promise<{ series: ResolvedSeries[]; answer?: ResolvedAnswer }> {
+  // Single-scan path: extreme answer on a single-metric line.
+  if (
+    spec.answer?.kind === "extreme" &&
+    spec.chart === "line" &&
+    spec.series.length === 1 &&
+    spec.series[0].source.kind === "metric"
+  ) {
+    const metric = spec.series[0].source.metric;
+    const cat = getByKey(metric);
+    if (cat) {
+      const bucket = influxBucket();
+      const { series, answer } = await extremeEnvelope(
+        bucket,
+        { series: spec.series[0], cat },
+        spec,
+        spec.answer.mode,
+      );
+      return { series: ensureChronological(spec, [series]), answer };
+    }
+  }
+
+  // General path: resolve series and answer independently (in parallel).
+  const [series, answer] = await Promise.all([
+    resolveChartSeries(spec),
+    resolveAnswer(spec),
+  ]);
+  return {
+    series: ensureChronological(spec, series),
+    ...(answer ? { answer } : {}),
+  };
+}
+
+/**
+ * Defensive guard: for line/area charts, ensure every series' points are sorted
+ * by time ascending — so a connected line can never draw a phantom arc from the
+ * last point back to the first (which would happen with out-of-order points).
+ * Other chart types (candlestick/heatmap/scatter) are left untouched.
+ */
+function ensureChronological(
+  spec: ChartSpec,
+  series: ResolvedSeries[],
+): ResolvedSeries[] {
+  if (spec.chart !== "line") return series;
+  return series.map((s) => ({ ...s, points: sortByTime(s.points) }));
+}
+
+/**
+ * Context series for an EXTREME answer: a coarse min/max envelope matching the
+ * answer mode (min→troughs, max→peaks). The window scales with the range so the
+ * series stays bounded (~≤800 pts) — short ranges fine, multi-year ranges
+ * weekly — but a SERIES is ALWAYS returned (never value-only).
+ */
+async function resolveExtremeContext(
+  bucket: string,
+  sc: SeriesCat,
+  spec: ChartSpec,
+  mode: "min" | "max",
+): Promise<ResolvedSeries[]> {
+  const points = await extremeEnvelope(bucket, sc, spec, mode);
+  return [points.series];
+}
+
+/** Pick the envelope window for an extreme answer over `span` ms. */
+function extremeWindow(span: number | null): string {
+  if (span == null) return "1d";
+  if (span <= 2 * MS.d) return "15m";
+  if (span <= 14 * MS.d) return "1h";
+  if (span <= 90 * MS.d) return "6h";
+  if (span <= 800 * MS.d) return "1d"; // up to ~26 months → daily
+  if (span <= 3 * MS.y) return "3d";
+  return "7d"; // multi-year → weekly envelope (cheap aggregate)
+}
+
+/**
+ * Pinpoint the exact extreme within the envelope BUCKET that produced `bucketEnd`
+ * via a narrow raw min()/max(). aggregateWindow labels a bucket by its END time,
+ * so the bucket covers `[bucketEnd - windowMs, bucketEnd]`. That window is at most
+ * a few days (1d–7d), so the scan is cheap regardless of the overall range.
+ * Returns the precise `(_time, _value)`, or null if the window has no data.
+ */
+async function rawExtremeInBucket(
+  bucket: string,
+  cat: CatalogEntry,
+  mode: "min" | "max",
+  bucketEnd: string,
+  windowMs: number,
+): Promise<SeriesPoint | null> {
+  const end = new Date(bucketEnd);
+  // Pad the window by 1ms so the boundary instant at bucketEnd is included.
+  const start = new Date(end.getTime() - windowMs);
+  const stop = new Date(end.getTime() + 1);
+  const flux = `from(bucket: "${bucket}")
+  |> range(start: ${start.toISOString()}, stop: ${stop.toISOString()})
+  |> filter(fn: (r) => r["entity_id"] == "${cat.entityId}")
+  |> filter(fn: (r) => r["_field"] == "value")
+  |> ${mode}()
+  |> keep(columns: ["_time", "_value"])`;
+  const pts = await runFluxPoints(flux);
+  return pts[0] ?? null;
+}
+
+/**
+ * Compute the extreme min/max for an answer with a LAYERED query (cheap, no long
+ * timeout): a coarse min/max ENVELOPE finds the extreme bucket (and serves as
+ * the context series — daily MIN for "coldest" / MAX for "hottest", so it shows
+ * the troughs/peaks). When that bucket is ≥1 day wide, a second NARROW raw
+ * min()/max() scoped to just that day pinpoints the exact minute + true value.
+ * Both queries are bounded, so even multi-year extremes stay under the default
+ * timeout. The series is always returned (never value-only).
+ */
+async function extremeEnvelope(
+  bucket: string,
+  sc: SeriesCat,
+  spec: ChartSpec,
+  mode: "min" | "max",
+): Promise<{ series: ResolvedSeries; answer: ResolvedAnswer }> {
+  const span = rangeSpanMs(spec.timeRange);
+  const base = extremeWindow(span);
+  // The actual envelope window after adaptiveWindow may be coarser than `base`.
+  const effective = adaptiveWindow(spec.timeRange, sanitizeWindow(base, "1d"));
+  const windowMs = durationMs(effective) ?? MS.d;
+  // For coarse (≥1d) envelopes use cheap UTC bucketing — local-time boundaries
+  // are immaterial to a daily/weekly trend and the TZ-aware aggregate is far
+  // slower over multi-year ranges. Sub-daily envelopes keep local time.
+  const coarse = windowMs >= MS.d;
+  const points = await windowedPoints(
+    bucket,
+    sc.cat,
+    mode,
+    base,
+    spec.timeRange,
+    /* localTz */ !coarse,
+  );
+
+  // The extreme bucket of the envelope (coarse to find the day/week).
+  let best: SeriesPoint | null = null;
+  for (const p of points) {
+    if (best == null) best = p;
+    else if (mode === "min" ? p.v < best.v : p.v > best.v) best = p;
+  }
+
+  // Layered pinpoint: for a ≥1d bucket, refine to the exact minute + true value
+  // with one narrow raw query scoped to that bucket's window. Sub-daily buckets
+  // are already precise enough.
+  let exact = best;
+  if (best && coarse) {
+    try {
+      const pinned = await rawExtremeInBucket(
+        bucket,
+        sc.cat,
+        mode,
+        best.t,
+        windowMs,
+      );
+      if (pinned) exact = pinned;
+    } catch {
+      // Pinpoint is best-effort — fall back to the bucket time/value.
+    }
+  }
+
+  const grain = coarse ? "Tages" : "Verlaufs";
+  const series: ResolvedSeries = {
+    ...baseSeries(sc, points),
+    label:
+      sc.series.label ||
+      `${sc.cat.labelDe} (${grain}-${mode === "min" ? "Min" : "Max"})`,
+  };
+  const answer: ResolvedAnswer = {
+    kind: "extreme",
+    label:
+      mode === "min"
+        ? `Tiefstwert ${sc.cat.labelDe}`
+        : `Höchstwert ${sc.cat.labelDe}`,
+    unit: sc.cat.unit,
+    value: exact ? Math.round(exact.v * 10) / 10 : null,
+    t: exact ? exact.t : null,
+  };
+  return { series, answer };
+}
+
+/** Effective time range for a series: its own override, else the chart's. */
+function seriesTimeRange(series: Series, spec: ChartSpec): TimeRange {
+  return series.timeRange ?? spec.timeRange;
+}
+
+/**
+ * Resolve a derived (degree-day) series: pull the input metric's daily-mean
+ * temperature over the range, then run the named transform server-side. The
+ * result is a cumulative line. See transforms.ts + spec-05 §4.
+ */
+async function resolveDerivedSeries(
+  bucket: string,
+  series: Series,
+  spec: ChartSpec,
+): Promise<ResolvedSeries> {
+  if (series.source.kind !== "derived") {
+    throw new Error("resolveDerivedSeries called on a non-derived series");
+  }
+  const src = series.source;
+  if (!isTransform(src.transform)) {
+    throw new ChartShapeError(`Unbekannte Transform: ${src.transform}`);
+  }
+  const inputMetric = src.inputs[0]?.metric ?? "outdoor_temperature";
+  const cat = getByKey(inputMetric);
+  if (!cat) {
+    throw new Error(`Derived input references unknown metric "${inputMetric}"`);
+  }
+
+  const dailyMeans = await windowedPoints(
+    bucket,
+    cat,
+    "mean",
+    "1d",
+    seriesTimeRange(series, spec),
+  );
+  const base = src.base ?? defaultBase(src.transform);
+  const result = applyTransform(src.transform, dailyMeans, base);
+
+  return {
+    id: series.id,
+    label: series.label || result.label,
+    unit: result.unit,
+    role: series.role,
+    color: series.color,
+    points: result.cumulative,
+  };
+}
+
+/**
+ * Comparison overlay: resolve each series on its own timeRange, then rebase the
+ * x-axis to a shared relative axis (day-of-period, anchored at a common epoch)
+ * so two different years line up. Series labels stay the period descriptors.
+ */
+async function resolveComparison(
+  bucket: string,
+  scs: SeriesCat[],
+  spec: ChartSpec,
+): Promise<ResolvedSeries[]> {
+  return Promise.all(
+    scs.map(async (sc) => {
+      const tr = seriesTimeRange(sc.series, spec);
+      const raw = await runFluxPoints(
+        buildSeriesFlux(bucket, sc.cat, sc.series, tr),
+      );
+      // Rebase: offset each point's date to a common reference year (2000) but
+      // keep month/day/time, so periods from different years overlap on the axis.
+      const rebased = raw.map((p) => {
+        const d = new Date(p.t);
+        const rebasedDate = new Date(
+          Date.UTC(
+            2000,
+            d.getUTCMonth(),
+            d.getUTCDate(),
+            d.getUTCHours(),
+            d.getUTCMinutes(),
+          ),
+        );
+        return { t: rebasedDate.toISOString(), v: p.v };
+      });
+      return { ...baseSeries(sc, rebased) };
+    }),
+  );
 }
 
 type SeriesCat = { series: Series; cat: CatalogEntry };
 
 /** Build a base ResolvedSeries (metadata + colour), points filled by callers. */
+/**
+ * Sort points by time ASCENDING (defensive). Some Flux aggregates over long,
+ * multi-shard ranges can return rows out of chronological order; an unsorted
+ * line/area series would draw a phantom arc from the last point back to the
+ * first. Sorting here guarantees a clean chronological line everywhere.
+ */
+function sortByTime(points: SeriesPoint[]): SeriesPoint[] {
+  return [...points].sort((a, b) => a.t.localeCompare(b.t));
+}
+
 function baseSeries(
   sc: SeriesCat,
   points: SeriesPoint[] = [],
@@ -188,7 +628,7 @@ function baseSeries(
     unit: sc.cat.unit,
     role: sc.series.role,
     color: sc.series.color,
-    points,
+    points: sortByTime(points),
   };
 }
 
@@ -208,15 +648,24 @@ async function windowedPoints(
   fn: "min" | "max" | "mean" | "sum" | "first" | "last",
   window: string,
   timeRange: TimeRange,
+  // Local-time bucket boundaries (Europe/Berlin). Correct for daily/hourly
+  // charts, but the TZ-aware aggregateWindow is MUCH slower over long ranges
+  // (DST-aware bucketing across years). Callers that only need a coarse trend
+  // (the extreme envelope) pass false to use cheap UTC bucketing.
+  localTz = true,
 ): Promise<SeriesPoint[]> {
   const start = sanitizeRangeToken(timeRange.start, "-7d");
   const stop = sanitizeRangeToken(timeRange.stop ?? "now", "now()");
-  const w = sanitizeWindow(window, "1d");
-  const flux = `${TZ_PREAMBLE}from(bucket: "${bucket}")
+  // Coarsen long ranges so heavy aggregates (candlestick/heatmaps/count/…) stay
+  // bounded; never finer than requested, so short ranges keep their resolution.
+  const w = adaptiveWindow(timeRange, sanitizeWindow(window, "1d"));
+  const preamble = localTz ? TZ_PREAMBLE : "";
+  const flux = `${preamble}from(bucket: "${bucket}")
   |> range(start: ${start}, stop: ${stop})
   |> filter(fn: (r) => r["entity_id"] == "${cat.entityId}")
   |> filter(fn: (r) => r["_field"] == "value")
   |> aggregateWindow(every: ${w}, fn: ${fn}, createEmpty: false)
+  ${TERMINAL_SORT}
   |> yield(name: "v")`;
   return runFluxPoints(flux);
 }
@@ -387,6 +836,117 @@ async function shapeChart(
       );
     }
   }
+}
+
+// ── Answer resolvers (spec-05 §4): extreme / scalar / count ─────────────────
+
+function compareOp(op: string): "<" | "<=" | ">" | ">=" {
+  switch (op) {
+    case "<":
+    case "<=":
+    case ">":
+    case ">=":
+      return op;
+    default:
+      return ">";
+  }
+}
+
+/**
+ * Resolve a ChartSpec.answer into a prominent computed result (spec-05 §4).
+ * Whitelist: the answer's metric must be in the catalog. Returns null if the
+ * spec has no answer.
+ */
+export async function resolveAnswer(
+  spec: ChartSpec,
+): Promise<ResolvedAnswer | undefined> {
+  const answer = spec.answer;
+  if (!answer) return undefined;
+
+  const bucket = influxBucket();
+  const cat = getByKey(answer.metric);
+  if (!cat) {
+    throw new ChartShapeError(`Unbekannte Metrik in Answer: ${answer.metric}`);
+  }
+  const start = sanitizeRangeToken(spec.timeRange.start, "-30d");
+  const stop = sanitizeRangeToken(spec.timeRange.stop ?? "now", "now()");
+
+  if (answer.kind === "extreme") {
+    // min()/max() in Flux keep the row's timestamp → value + exact time in one.
+    const fn = answer.mode === "min" ? "min" : "max";
+    const flux = `${TZ_PREAMBLE}from(bucket: "${bucket}")
+  |> range(start: ${start}, stop: ${stop})
+  |> filter(fn: (r) => r["entity_id"] == "${cat.entityId}")
+  |> filter(fn: (r) => r["_field"] == "value")
+  |> ${fn}()
+  |> keep(columns: ["_time", "_value"])`;
+    const pts = await runFluxPoints(flux);
+    const hit = pts[0] ?? null;
+    return {
+      kind: "extreme",
+      label:
+        answer.mode === "min"
+          ? `Tiefstwert ${cat.labelDe}`
+          : `Höchstwert ${cat.labelDe}`,
+      unit: cat.unit,
+      value: hit ? hit.v : null,
+      t: hit ? hit.t : null,
+    };
+  }
+
+  if (answer.kind === "scalar") {
+    // For rain accumulators, sum over the differenced counter; else aggregate raw.
+    let flux: string;
+    if (cat.rainCounter && answer.agg === "sum") {
+      flux = `${TZ_PREAMBLE}from(bucket: "${bucket}")
+  |> range(start: ${start}, stop: ${stop})
+  |> filter(fn: (r) => r["entity_id"] == "${cat.entityId}")
+  |> filter(fn: (r) => r["_field"] == "value")
+  |> difference(nonNegative: true)
+  |> sum()
+  |> keep(columns: ["_value"])`;
+    } else {
+      flux = `${TZ_PREAMBLE}from(bucket: "${bucket}")
+  |> range(start: ${start}, stop: ${stop})
+  |> filter(fn: (r) => r["entity_id"] == "${cat.entityId}")
+  |> filter(fn: (r) => r["_field"] == "value")
+  |> ${answer.agg}()
+  |> keep(columns: ["_value"])`;
+    }
+    // mean()/sum() drop _time → read just the scalar value.
+    const v = await runFluxScalar(flux);
+    const aggLabel = { mean: "Durchschnitt", sum: "Summe", min: "Minimum", max: "Maximum" }[answer.agg];
+    return {
+      kind: "scalar",
+      label: `${aggLabel} ${cat.labelDe}`,
+      unit: cat.unit,
+      value: v == null ? null : Math.round(v * 10) / 10,
+    };
+  }
+
+  // count: number of days/hours meeting op+threshold. Frost → day-min,
+  // heat → day-max; default day-max for ">" and day-min for "<".
+  const op = compareOp(answer.op);
+  const window = answer.per === "hour" ? "1h" : "1d";
+  const dayFn = op === "<" || op === "<=" ? "min" : "max";
+  const flux = `${TZ_PREAMBLE}from(bucket: "${bucket}")
+  |> range(start: ${start}, stop: ${stop})
+  |> filter(fn: (r) => r["entity_id"] == "${cat.entityId}")
+  |> filter(fn: (r) => r["_field"] == "value")
+  |> aggregateWindow(every: ${window}, fn: ${dayFn}, createEmpty: false)
+  |> filter(fn: (r) => r["_value"] ${op} ${answer.threshold})
+  |> count()
+  |> keep(columns: ["_value"])`;
+  // count() drops _time → read the scalar; no rows means zero matches.
+  const n = (await runFluxScalar(flux)) ?? 0;
+  const perLabel = answer.per === "hour" ? "Stunden" : "Tage";
+  return {
+    kind: "count",
+    label: `${perLabel} mit ${cat.labelDe} ${op} ${answer.threshold} ${cat.unit}`,
+    unit: perLabel,
+    value: n,
+    count: n,
+  };
 }
 
 // ── Kennwerte (live values for the header row, spec-03 §4) ──────────────────
