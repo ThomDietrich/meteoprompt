@@ -51,14 +51,52 @@ Druck, Wind, Strahlung) sind über `mean/min/max` **unkritisch** — Duplikate v
 nicht; nur `sum` ist gefährlich.
 
 **Regel:** Mengen immer aus dem stationseigenen **Tagesakkumulator** ableiten
-(`max`/Tag bzw. `difference(nonNegative)+sum`), nie aus rohen Intervallzählern.
-Verdunstung analog: `evapotranspiration_dailysensor_mm` (Akkumulator) statt `evapotranspiration_mm`.
+(`max`/Tag bzw. `difference(nonNegative)+sum`), nie aus rohen Intervallzählern —
+**außer** wenn der Akkumulator defekt ist (s. Evapotranspiration §4).
 
-## 4. Mittelfristige To-dos (zu beheben)
+## 4. Evapotranspiration (ET): dedup-then-sum auf `evapotranspiration_mm`
+
+Belegt 2026-06-28 (forensisch + Abgleich mit der WeeWX/InfluxDB-Community).
+
+**Physik:** WeeWX `ET` ist — wie Regen — ein **Intervall-Delta** (pro Archiv-Intervall, summierbar;
+FAO-56 Penman-Monteith). Eigentlich also wie `dayrain` über einen Tagesakkumulator lesbar.
+
+**Zwei Probleme hier:**
+1. **HA über-sampelt** den Wert: re-read alle ~16 s + ns-Offset-Duplikate ⇒ **jeder 5-min-Archivwert
+   wird ~19× geschrieben** ⇒ naive Summe ≈ **90 mm/Tag** (~19× zu hoch).
+2. Der **`dayET`-Akkumulator** (`evapotranspiration_dailysensor_mm`) ist **defekt** (nicht-monoton,
+   springt z. B. 2,78 → 0,25 → 8,74 → 1,28) ⇒ die saubere `max(dayET)/Tag`-Methode (wie bei Regen)
+   ist **nicht** nutzbar.
+
+**Verbindliche Lesart:** an der **Archiv-Intervall-Grenze deduplizieren, dann summieren.**
+
+| Lesart | Tag (Sommer) | Bewertung |
+|---|---|---|
+| `evapotranspiration_mm`, `sum`(roh) | ~90 mm | ❌ ~19× **Überzählung** (HA-Oversampling) |
+| `evapotranspiration_mm`, **dedup(5m last)+sum** | **~4,5–5,2 mm** | ✅ korrekt (validiert; Winter ~0,16–0,42 mm) |
+| `evapotranspiration_dailysensor_mm` (dayET) | nicht-monoton | ❌ defekt — **nicht verwenden** |
+
+```flux
+import "timezone"
+option location = timezone.location(name: "Europe/Berlin")
+from(bucket: ...)
+  |> range(start: -30d)
+  |> filter(fn: (r) => r.entity_id == "weather_station_evapotranspiration_mm" and r._field == "value")
+  |> aggregateWindow(every: 5m, fn: last, createEmpty: false)   // dedup HA-Oversampling → 1 Wert/Archiv-Intervall
+  |> aggregateWindow(every: 1d, fn: sum, createEmpty: false)    // Tagessumme
+  |> sort(columns: ["_time"])                                    // TERMINAL_SORT-Konvention
+```
+
+Im Code als Katalog-Flag `dedupSum` + `dedupWindow` (Standard `"5m"`) umgesetzt, in `buildSeriesFlux`
+und dem Scalar-Antwortpfad. **5-min-Dedup-Fenster = das Archiv-Intervall der Station** — ändert sich
+das Intervall, muss `dedupWindow` angepasst werden. Gilt für jedes ET-Fenster (Tag fürs Dashboard,
+sub-täglich/wöchentlich via NL): erst 5m-dedup, dann am gewünschten Binning summieren.
+
+## 5. Mittelfristige To-dos (zu beheben)
 
 - [ ] **Mehrfach-Writes an der Quelle** (HA→InfluxDB) untersuchen/deduplizieren — z. B. Schreib-Dedup
       oder eine bereinigte Downsampling-Task; danach könnten Intervallserien wieder vertrauenswürdig summierbar sein.
-- [ ] **Evapotranspiration** wie Regen behandeln (Akkumulator-Variante; Intervallserie meiden).
+- [x] **Evapotranspiration** korrekt lesen (dedup-then-sum auf `evapotranspiration_mm`, s. §4).
 - [ ] **ventus-Integration** abschalten (redundant) oder klar als Live-Backup kennzeichnen.
 - [ ] Prüfen, ob weitere **Akkumulatoren** (`windrun_km`, Regen-Varianten) Reset-/Dup-Effekte zeigen.
 - [ ] Optional: Down-sampled „clean"-Bucket für Mengen (vorberechnete Tages-/Stundensummen).
