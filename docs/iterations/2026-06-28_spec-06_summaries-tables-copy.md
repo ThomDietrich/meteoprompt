@@ -28,7 +28,7 @@ Drei Features:
 - Erscheint **unter** dem Diagramm, innerhalb der Card.
 - Nur bei **abgefragten** Cards (mit Aufgabenstellung). Die festen Stations-Charts bekommen
   **keinen** Text (spart Kosten/Latenz; Geltungsbereich-Entscheidung).
-- **1–3 Sätze**, Prosa, **max. 200 Wörter**, Deutsch.
+- **1–2 Sätze**, Prosa, **max. 100 Wörter**, Deutsch.
 
 ### Inhalt (aus dem Interview festgelegt)
 - **Fokus:** Wenn eine Nutzerfrage vorliegt → **zuerst die Frage direkt beantworten**.
@@ -48,7 +48,7 @@ Punktanzahl, auffällige Ausreißer, Zeitraum, Einheit; bei Antwort-Cards zusät
 sind belegt; Claude erfindet keine Werte.
 
 ### Claude-Prompt (Entwurf)
-> **System:** „Du erläuterst ein Wetter-Diagramm in **1–3 kurzen Sätzen (max. 200 Wörter)**,
+> **System:** „Du erläuterst ein Wetter-Diagramm in **1–2 kurzen Sätzen (max. 100 Wörter)**,
 > auf Deutsch, **sachlich und allgemeinverständlich** (kein Fachjargon) — für Nutzer, die
 > Diagramme nicht gut lesen.
 > (a) Liegt eine Nutzerfrage vor, **beantworte sie zuerst direkt**.
@@ -133,14 +133,16 @@ innerhalb des Instrumententafel-Kastens** (unter den 12 aktuellen Werten).
   Besonderheiten der letzten 2–5 Tage** (z. B. ein extremer Regentag, eine Hitze-/Kälte-/
   milde Phase, ein Sturmtag). Beispiel: „Gestern hat es extrem stark geregnet, ansonsten
   milde Temperaturen. Wir befinden uns aktuell in einer sehr heißen Sommerphase."
-- 1–3 Sätze, ≤200 Wörter, **sachlich, allgemeinverständlich, datenbasiert** — **gleiches
+- 1–2 Sätze, ≤100 Wörter, **sachlich, allgemeinverständlich, datenbasiert** — **gleiches
   Regelwerk wie A)** (kein Erfinden, keine Vorhersage, keine Ratschläge).
 
 ### Daten (kein Halluzinieren)
-Serverseitig über die **letzten ~5 Tage** berechnet, je Tag: Temperatur (Min/Max/Mittel),
-Regenmenge (korrekt: `dayrain`-Akkumulator/dedup), ggf. Windböe-Max & Sonne; plus die
-aktuellen Werte. Daraus Merkmale ableiten (heißer/kalter/milder Tag, starker Regentag,
-Trend/Phase) und Claude (**sonnet**) übergeben.
+Serverseitig über die **letzten ~5 abgeschlossenen Tage** berechnet, je Tag: Temperatur
+(Min/Max/Mittel), Regenmenge (korrekt: `dayrain`-Akkumulator/dedup), ggf. Windböe-Max &
+Sonne; plus die aktuellen Werte. Daraus Merkmale ableiten (heißer/kalter/milder Tag, starker
+Regentag, Trend/Phase) und Claude (**sonnet**) übergeben. **Tages-Buckets per `timeSrc:"_start"`
+korrekt dem lokalen Tag zugeordnet; der noch laufende heutige Tag wird ausgeschlossen** (sonst
+würden Teil-Tageswerte als fertige Tage präsentiert) — „jetzt" kommt aus den Live-Werten.
 
 ### Endpoint & UI
 - Neuer **`GET /api/overview`** — berechnet die 5-Tage-Kennzahlen + ruft Claude.
@@ -163,7 +165,7 @@ Beide Exit 0.
 **Gate B** (Playwright + Live):
 - **Begleittext:** NL-Query → Card mit 1–3-Satz-Text **unter** dem Diagramm; die genannten
   Zahlen/Daten stimmen mit den aufgelösten Daten überein (z. B. Regen-Beispiel); sachlich,
-  ≤200 Wörter; **nicht** bei festen Charts; wird bei **Reload neu erzeugt** (aktuell zu den
+  ≤100 Wörter; **nicht** bei festen Charts; wird bei **Reload neu erzeugt** (aktuell zu den
   Daten — `/api/chart` löst für NL-Cards den Summary-Call aus).
 - **CSV:** Download-Button auf einem Diagramm UND einer Tabelle → lädt die korrekten
   aufgelösten Datenpunkte als CSV.
@@ -172,7 +174,7 @@ Beide Exit 0.
   korrekte Daten.
 - **Kopieren:** Klick legt den Original-Prompt in die Zwischenablage (per Clipboard/Paste
   verifiziert).
-- **Wetterlage-Überblick:** unter den Kennwerten erscheint ein 1–3-Satz-Text, der die
+- **Wetterlage-Überblick:** unter den Kennwerten erscheint ein 1–2-Satz-Text, der die
   aktuelle Lage + eine Besonderheit der letzten Tage datenkorrekt beschreibt; Werte
   erscheinen sofort, der Text asynchron; bei Reload neu.
 - **Keine Regression** in Iteration 1–5.
@@ -196,3 +198,12 @@ Beide Exit 0.
 2. Summary: **bei jedem Reload neu** erzeugen (immer aktuell; `/api/chart` nicht mehr
    LLM-frei für NL-Cards).
 3. CSV-Export: **als kleine Schaltfläche für alle Cards** (Diagramme + Tabellen).
+
+## Nachtrag (nach Abnahme)
+- **Wortgrenze 200 → 100** (A + E): Texte waren tendenziell zu lang.
+- **E-Datenkorrektur:** der Überblick nannte falsche Tageswerte. Ursache: Tages-Buckets per
+  Default am Fenster-`_stop` (= nächste lokale Mitternacht) gelabelt → `dayKey()` schob jeden
+  Tag um +1, und der noch laufende heutige Tag kollidierte mit dem Vortag und überschrieb ihn.
+  Fix: `aggregateWindow(..., timeSrc: "_start")` + Ausschluss des laufenden Tages; Prompt
+  schärft „nur belegte Werte, Trend nur wenn eindeutig". Verifiziert: Peak 40,6 °C am 27.06.
+  (statt fälschlich 38,2 °C/28.06.).

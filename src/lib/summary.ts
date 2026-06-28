@@ -28,8 +28,8 @@ import type {
 /** Model for the narrative — same family as /api/ask (quality, spec decision 1). */
 const MODEL = "claude-sonnet-4-6";
 
-/** Hard cap so a runaway response can't blow past the spec's ≤200-word limit. */
-const MAX_TOKENS = 400;
+/** Hard cap so a runaway response can't blow past the ≤100-word target. */
+const MAX_TOKENS = 220;
 
 // ── 1) Stats (computed server-side from the resolved data) ──────────────────
 
@@ -222,7 +222,7 @@ export function computeSummaryStats(series: ResolvedSeries[]): SummaryStats {
 
 // ── 2) Claude call (stats → prose) ──────────────────────────────────────────
 
-const SYSTEM_PROMPT = `Du erläuterst eine Wetter-Darstellung (Diagramm ODER Tabelle, die dem Nutzer bereits angezeigt wird) in 1–3 kurzen Sätzen (max. 200 Wörter), auf Deutsch, sachlich und allgemeinverständlich (kein Fachjargon) — für Nutzer, die Diagramme/Tabellen nicht gut lesen. Die Darstellung ist vorhanden; sage NICHT, dass du etwas nicht anzeigen kannst.
+const SYSTEM_PROMPT = `Du erläuterst eine Wetter-Darstellung (Diagramm ODER Tabelle, die dem Nutzer bereits angezeigt wird) in 1–2 kurzen Sätzen (max. 100 Wörter), auf Deutsch, sachlich und allgemeinverständlich (kein Fachjargon) — für Nutzer, die Diagramme/Tabellen nicht gut lesen. Die Darstellung ist vorhanden; sage NICHT, dass du etwas nicht anzeigen kannst.
 (a) Liegt eine Nutzerfrage vor, beantworte sie zuerst direkt.
 (b) Beschreibe knapp Verlauf/Muster und hebe das Bemerkenswerteste hervor (Extrem/Ausreißer/Trend) mit konkreten Werten und Datum im DE-Format (Komma als Dezimaltrennzeichen, Einheit, z. B. „22 mm am 13.10.2020").
 (c) Du darfst einordnen (z. B. „ungewöhnlich hoch"), aber NUR gestützt auf die bereitgestellten Daten/den Zeitraum — erfinde nichts, keine Vorhersage, keine Ratschläge.

@@ -28,11 +28,12 @@ import { resolveKennwerte } from "@/lib/flux";
 /** Same model + family as /api/ask and summary.ts (quality, spec decision 1). */
 const MODEL = "claude-sonnet-4-6";
 
-/** Hard cap so a runaway response can't blow past the spec's ≤200-word limit. */
-const MAX_TOKENS = 400;
+/** Hard cap so a runaway response can't blow past the ≤100-word target. */
+const MAX_TOKENS = 220;
 
-/** How many days back the per-day window covers (spec: "letzten ~5 Tage"). */
-const DAYS_BACK = 5;
+/** Days the per-day window spans; the still-running current day is dropped
+ *  afterwards, leaving ~5 COMPLETE days. */
+const DAYS_BACK = 6;
 
 /** Timezone preamble — windows align to Europe/Berlin local day boundaries. */
 const TZ_PREAMBLE =
@@ -72,9 +73,11 @@ function round1(n: number): number {
 }
 
 /**
- * Map a daily bucket's `_time` to its Europe/Berlin calendar date. The container
- * runs TZ=Europe/Berlin, so `sv-SE` formatting yields the correct `YYYY-MM-DD`
- * local day even though daily buckets are labelled at local midnight in UTC.
+ * Map a daily bucket's `_time` to its Europe/Berlin calendar date. We label
+ * buckets at their `_start` (the day's local midnight), so converting that
+ * instant in the container's Europe/Berlin TZ yields the day the bucket actually
+ * covers. (Default `_stop` labelling would land on the NEXT local midnight and
+ * shift every day forward by one.)
  */
 function dayKey(iso: string): string {
   return new Date(iso).toLocaleDateString("sv-SE");
@@ -90,7 +93,7 @@ async function dailyAgg(
   |> range(start: -${DAYS_BACK}d)
   |> filter(fn: (r) => r["entity_id"] == "${entityId}")
   |> filter(fn: (r) => r["_field"] == "value")
-  |> aggregateWindow(every: 1d, fn: ${fn}, createEmpty: false)
+  |> aggregateWindow(every: 1d, fn: ${fn}, createEmpty: false, timeSrc: "_start")
   ${TERMINAL_SORT}`;
   const points = await runFluxPoints(flux);
   const byDay = new Map<string, number>();
@@ -143,8 +146,13 @@ export async function computeOverviewStats(): Promise<OverviewStats> {
     ...gustMax.keys(),
     ...solarMax.keys(),
   ]);
+  // Drop the still-running current local day — its partial max/mean would be
+  // wrongly presented as a finished day. "Now" is covered by the live `current`
+  // values; `days` holds only COMPLETE days.
+  const today = new Date().toLocaleDateString("sv-SE"); // container TZ=Europe/Berlin
   const days: DayStats[] = [...allDays]
     .sort()
+    .filter((date) => date < today)
     .map((date) => ({
       date,
       tempMin: tempMin.get(date) ?? null,
@@ -175,12 +183,11 @@ export async function computeOverviewStats(): Promise<OverviewStats> {
 
 // ── 2) Claude call (stats → prose) ──────────────────────────────────────────
 
-const SYSTEM_PROMPT = `Du beschreibst die aktuelle Wetterlage einer Wetterstation in 1–3 kurzen Sätzen (max. 200 Wörter), auf Deutsch, sachlich und allgemeinverständlich (kein Fachjargon) — für Laien.
-(a) Beschreibe knapp die AKTUELLE Wetterlage (aus den aktuellen Werten + den letzten Tagen, z. B. eine heiße/kalte/milde Phase, eine trockene/nasse Phase).
-(b) Hebe EINE Besonderheit der letzten Tage hervor (z. B. ein extremer Regentag, ein Sturmtag, der heißeste/kälteste Tag) mit konkreten Werten und Datum im DE-Format (Komma als Dezimaltrennzeichen, Einheit, z. B. „22 mm am 13.10.2020").
-(c) Du darfst einordnen (z. B. „ungewöhnlich heiß"), aber NUR gestützt auf die bereitgestellten Zahlen — erfinde nichts, keine Vorhersage, keine Ratschläge.
-(d) Wenn nichts Bemerkenswertes vorliegt, beschreibe schlicht die Lage.
-Verwende ausschließlich die im JSON bereitgestellten Zahlen und Daten — erfinde KEINE Werte. Gib nur den Fließtext aus — keine Aufzählung, keine Überschrift, keine Anrede. Beispielton: „Gestern hat es extrem stark geregnet, ansonsten milde Temperaturen. Wir befinden uns aktuell in einer sehr heißen Sommerphase."`;
+const SYSTEM_PROMPT = `Du beschreibst die aktuelle Wetterlage einer Wetterstation in 1–2 kurzen Sätzen (max. 100 Wörter), auf Deutsch, sachlich und allgemeinverständlich (kein Fachjargon) — für Laien.
+(a) Beschreibe knapp die AKTUELLE Lage aus den Live-Werten („aktuell") — z. B. heiß/kalt/mild, trocken/nass.
+(b) Hebe EINE Besonderheit der letzten Tage („letzteTage") hervor (heißester/kältester/regenreichster Tag o. Ä.) mit konkretem Wert und Datum im DE-Format (Komma, Einheit, z. B. „40,6 °C am 27.06.2026").
+Wichtig: „letzteTage" sind ABGESCHLOSSENE Tage, „aktuell" ist jetzt — verwechsle sie nicht. Verwende AUSSCHLIESSLICH die Zahlen im JSON — erfinde KEINE Werte. Behaupte einen Trend (steigend/fallend) NUR, wenn die Tageswerte ihn eindeutig zeigen; sonst nenne nur die konkreten Werte. Keine Vorhersage, keine Ratschläge. Wenn nichts Bemerkenswertes vorliegt, beschreibe schlicht die Lage. Gib nur den Fließtext aus — keine Aufzählung, keine Überschrift, keine Anrede.
+Beispielton: „Aktuell sehr heiß und trocken bei 34,9 °C. Der heißeste Tag war der 27.06.2026 mit 40,6 °C."`;
 
 /** German-readable date hint (DD.MM.YYYY) for a YYYY-MM-DD day key. */
 function deDate(day: string): string {
