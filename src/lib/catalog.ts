@@ -9,9 +9,12 @@
  * entityId = `weather_station_<suffix>`. The numeric field is always `_field == "value"`.
  * `rainCounter: true` marks daily-accumulator metrics that must be read via
  * difference(nonNegative)+sum (§7), never summed raw.
+ * `dedupSum: true` marks per-interval metrics that Home Assistant OVER-SAMPLES
+ * (duplicate writes), so they must be read via dedup(`dedupWindow` last)+sum,
+ * never summed raw (a naive sum over-counts). See docs/data-quality-influxdb.md.
  *
  * Shared between client and server (no server-only dependency): the client uses
- * labels/units, the server uses entityId + rainCounter to build Flux.
+ * labels/units, the server uses entityId + rainCounter/dedupSum to build Flux.
  */
 
 import type { Aggregation, ChartType } from "@/lib/query-spec";
@@ -35,6 +38,8 @@ export interface CatalogEntry {
     | "strahlung"
     | "verdunstung";
   rainCounter?: boolean; // true → daily accumulator: read via difference(nonNegative)+sum (§7)
+  dedupSum?: boolean; // true → HA over-sampled per-interval metric: dedup(dedupWindow last)+sum
+  dedupWindow?: string; // dedup window for dedupSum (= station archive interval, default "5m")
 }
 
 const PREFIX = "weather_station_";
@@ -51,6 +56,8 @@ function entry(
   defaultChart: ChartType,
   category: CatalogEntry["category"],
   rainCounter?: boolean,
+  dedupSum?: boolean,
+  dedupWindow = "5m",
 ): CatalogEntry {
   return {
     key,
@@ -64,6 +71,7 @@ function entry(
     defaultChart,
     category,
     ...(rainCounter ? { rainCounter: true } : {}),
+    ...(dedupSum ? { dedupSum: true, dedupWindow } : {}),
   };
 }
 
@@ -111,7 +119,12 @@ export const CATALOG: CatalogEntry[] = [
   entry("cloud_base", "cloudbase_meter", "m", "Wolkenbasis-Höhe", ["wolken", "wolkenbasis", "cloud base", "wolkenbasis-höhe"], "mean", "1h", "line", "strahlung"),
 
   // ── Verdunstung ─────────────────────────────────────────────────────────
-  entry("evapotranspiration", "evapotranspiration_dailysensor_mm", "mm", "Evapotranspiration", ["verdunstung", "evapotranspiration", "et"], "sum", "1d", "bars", "verdunstung", true),
+  // WeeWX `ET` is a per-interval delta (summable like rain), but HA over-samples
+  // it (~19× duplicate writes per 5-min archive interval), so it must be read
+  // dedup(5m last)+sum — NOT summed raw (~90 mm/day, ~19× too high). The
+  // `_dailysensor_mm` (dayET) accumulator is broken here (non-monotonic) — do not
+  // use it. See docs/data-quality-influxdb.md §ET.
+  entry("evapotranspiration", "evapotranspiration_mm", "mm", "Evapotranspiration", ["verdunstung", "evapotranspiration", "et", "verdunstungsrate", "evaporation"], "sum", "1d", "bars", "verdunstung", false, true, "5m"),
 ];
 
 // ── Lookups ───────────────────────────────────────────────────────────────

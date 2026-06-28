@@ -14,7 +14,7 @@ const LOG_FILE = "failed-queries.jsonl";
 
 export interface FailedQueryRecord {
   query: string;
-  reason: string; // e.g. "out_of_scope" | "unmappable" | "chart_shape" | "server_error"
+  reason: string; // category: out_of_scope | unmappable | chart_shape | timeout | config | server_error
   detail?: string;
   route: string; // "/api/ask" | "/api/chart"
 }

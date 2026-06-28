@@ -18,13 +18,15 @@
 }
 
 /*
- * Display serif for the masthead title. We define a plain utility (not a @theme
- * font token) because the family is backed by the next/font CSS variable
- * --font-fraunces, set on <html> in layout.tsx — referencing it from @theme
- * resolves before that variable exists. Applied via the `font-display` class.
+ * Bold grotesque display font for the "Wetterchatty" wordmark. A plain utility
+ * (not a @theme font token) because the family is backed by the next/font CSS
+ * variable --font-wordmark, set on <html> in layout.tsx — referencing it from
+ * @theme resolves before that variable exists. Applied via the `font-wordmark`
+ * class on the header + footer wordmark. (Named `wordmark`, not `display`, so it
+ * doesn't collide with the CSS `font-display` descriptor in Tailwind processing.)
  */
-.font-display {
-  font-family: var(--font-fraunces), Georgia, "Times New Roman", serif;
+.font-wordmark {
+  font-family: var(--font-wordmark), "Arial Black", system-ui, sans-serif;
 }
 
 @theme inline {

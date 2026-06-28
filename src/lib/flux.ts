@@ -230,8 +230,8 @@ function buildSeriesFlux(
   // its final pipe before yield — guarantees chronological order. Unsorted Flux
   // results (aggregateWindow over multi-shard ranges) caused a phantom first↔last
   // connecting line/arc on the chart. See TERMINAL_SORT.
-  // Accumulator metrics (rainfall, evapotranspiration): differentiate the daily
-  // counter (nonNegative caps the midnight reset) then sum over the window.
+  // Rain accumulator (rainfall): differentiate the daily counter (nonNegative
+  // caps the midnight reset) then sum over the window.
   if (cat.rainCounter) {
     const requested = sanitizeWindow(
       series.source.window ?? cat.defaultWindow,
@@ -240,6 +240,28 @@ function buildSeriesFlux(
     const window = adaptiveWindow(timeRange, requested);
     return `${base}
   |> difference(nonNegative: true)
+  |> aggregateWindow(every: ${window}, fn: sum, createEmpty: false)
+  ${TERMINAL_SORT}
+  |> yield(name: "${series.id}")`;
+  }
+
+  // Dedup-sum (evapotranspiration): WeeWX `ET` is a per-interval delta (summable
+  // like rain), but Home Assistant OVER-SAMPLES it — it re-reads every ~16s plus
+  // ns-offset duplicate writes, so each archive value lands ~19× and a naive sum
+  // is ~19× too high (~90 mm/day). Collapse the over-sampling with a `last` at
+  // the station's ARCHIVE INTERVAL (5 min — forensically confirmed; update if the
+  // station's interval changes), THEN sum over the requested window. The dayET
+  // accumulator (`_dailysensor_mm`) is broken (non-monotonic) so the rain-style
+  // max/day method is NOT usable. See docs/data-quality-influxdb.md §ET.
+  if (cat.dedupSum) {
+    const dedup = sanitizeWindow(cat.dedupWindow ?? "5m", "5m");
+    const requested = sanitizeWindow(
+      series.source.window ?? cat.defaultWindow,
+      cat.defaultWindow,
+    );
+    const window = adaptiveWindow(timeRange, requested);
+    return `${base}
+  |> aggregateWindow(every: ${dedup}, fn: last, createEmpty: false)
   |> aggregateWindow(every: ${window}, fn: sum, createEmpty: false)
   ${TERMINAL_SORT}
   |> yield(name: "${series.id}")`;
@@ -895,7 +917,8 @@ export async function resolveAnswer(
   }
 
   if (answer.kind === "scalar") {
-    // For rain accumulators, sum over the differenced counter; else aggregate raw.
+    // Rain accumulator → sum the differenced counter; over-sampled ET → dedup
+    // (archive-interval last) then sum; else aggregate raw.
     let flux: string;
     if (cat.rainCounter && answer.agg === "sum") {
       flux = `${TZ_PREAMBLE}from(bucket: "${bucket}")
@@ -903,6 +926,15 @@ export async function resolveAnswer(
   |> filter(fn: (r) => r["entity_id"] == "${cat.entityId}")
   |> filter(fn: (r) => r["_field"] == "value")
   |> difference(nonNegative: true)
+  |> sum()
+  |> keep(columns: ["_value"])`;
+    } else if (cat.dedupSum && answer.agg === "sum") {
+      const dedup = sanitizeWindow(cat.dedupWindow ?? "5m", "5m");
+      flux = `${TZ_PREAMBLE}from(bucket: "${bucket}")
+  |> range(start: ${start}, stop: ${stop})
+  |> filter(fn: (r) => r["entity_id"] == "${cat.entityId}")
+  |> filter(fn: (r) => r["_field"] == "value")
+  |> aggregateWindow(every: ${dedup}, fn: last, createEmpty: false)
   |> sum()
   |> keep(columns: ["_value"])`;
     } else {

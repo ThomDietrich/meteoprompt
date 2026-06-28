@@ -1,10 +1,11 @@
 import Image from "next/image";
+import Link from "next/link";
 import { Sun } from "lucide-react";
 
 /**
  * Site footer — a calm, balanced counterpart to the masthead (spec-03 §3).
  * Two zones: LEFT a small Wappen + "Wetterchatty" wordmark + tagline; RIGHT the
- * data-source/Impressum links + copyright. Two restrained on-brand decorations:
+ * Impressum link + copyright. Two restrained on-brand decorations:
  * a soft GREEN HILL silhouette along the top edge (echoing the green hill of the
  * Nurzen coat of arms) and a faint GOLD sun glyph. Server component.
  */
@@ -48,7 +49,7 @@ export function Footer() {
             />
           </span>
           <div className="leading-tight">
-            <p className="font-display text-base font-semibold tracking-tight text-brand-blue dark:text-sky-300">
+            <p className="font-wordmark text-base tracking-tight text-brand-blue dark:text-sky-300">
               Wetterchatty
             </p>
             <p className="text-[13px] text-slate-500 dark:text-slate-400">
@@ -57,25 +58,15 @@ export function Footer() {
           </div>
         </div>
 
-        {/* RIGHT zone — links + copyright. */}
+        {/* RIGHT zone — Impressum + copyright. */}
         <div className="text-[13px] leading-relaxed text-slate-600 dark:text-slate-300 sm:text-right">
           <p>
-            Datenquelle:{" "}
-            <a
-              href="https://wetter.nurzen.de/neowx/"
-              target="_blank"
-              rel="noreferrer"
-              className="font-medium text-brand-blue underline-offset-2 hover:underline dark:text-sky-300"
-            >
-              wetter.nurzen.de/neowx
-            </a>
-            <span className="mx-2 text-slate-300 dark:text-slate-600">·</span>
-            <a
-              href="#"
+            <Link
+              href="/impressum"
               className="font-medium text-brand-blue underline-offset-2 hover:underline dark:text-sky-300"
             >
               Impressum
-            </a>
+            </Link>
           </p>
           <p className="mt-1 text-slate-400 dark:text-slate-500">
             © {year} Wetterchatty

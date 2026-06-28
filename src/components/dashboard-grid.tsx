@@ -227,20 +227,43 @@ export default function DashboardGrid() {
     [cards, persist, refreshPinned],
   );
 
-  // Unpin a GLOBAL card → remove it from the server set (default: it disappears).
+  // Unpin a GLOBAL card → move it back to the PRIVATE set (inverse of pin). The
+  // card doesn't disappear: it's removed from the server set AND re-added to the
+  // private cards, prepended to the top of section (2) as a normal private card
+  // (with the Anpinnen/Neu erstellen/Löschen buttons restored).
   const handleUnpin = useCallback(
     async (id: string) => {
+      const pinned = pinnedCards.find((c) => c.id === id);
       try {
         const res = await fetch(`/api/pinned/${encodeURIComponent(id)}`, {
           method: "DELETE",
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         await refreshPinned();
+
+        // Restore as a private card at the top (skip if we somehow lack the spec).
+        if (pinned) {
+          beginMutation();
+          const restoredId = `${Date.now()}-${pinned.spec.id}-${Math.random()
+            .toString(36)
+            .slice(2, 7)}`;
+          const restored: StoredCard = {
+            id: restoredId,
+            spec: { ...pinned.spec, id: restoredId },
+            originQuery: pinned.originQuery,
+            layout: topLayout(),
+          };
+          setCards((prev) => {
+            const next = [restored, ...shiftDown(prev, DEFAULT_SIZE.h)];
+            persist(next);
+            return next;
+          });
+        }
       } catch (e) {
         setError(e instanceof Error ? `Lösen fehlgeschlagen: ${e.message}` : "Lösen fehlgeschlagen");
       }
     },
-    [refreshPinned],
+    [pinnedCards, refreshPinned, persist, beginMutation],
   );
 
   // Submit free text → show a skeleton immediately → /api/ask → replace the

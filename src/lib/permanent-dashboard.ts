@@ -145,4 +145,12 @@ export const PERMANENT_CHARTS: ChartSpec[] = [
     binning: "hourOfDay×weekday",
     series: [s("perm-12-s0", "Außentemperatur", "outdoor_temperature", "mean", "1h")],
   },
+  // 13 — Evapotranspiration (30 T) → daily bars (dedup-sum, ~5 mm/Sommer-Tag)
+  {
+    id: "perm-13",
+    title: "Evapotranspiration (30 Tage)",
+    chart: "bars",
+    timeRange: { start: "-30d", stop: "now" },
+    series: [s("perm-13-s0", "Evapotranspiration", "evapotranspiration", "sum", "1d", { color: GREEN })],
+  },
 ];

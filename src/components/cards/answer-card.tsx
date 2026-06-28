@@ -6,7 +6,7 @@ import type { ResolvedAnswer } from "@/lib/query-spec";
 /**
  * Prominent KPI banner for a computed answer (spec-05 §4) — shown above the
  * context chart. A big number/value + unit, a label, and (for an extreme) the
- * exact date. Body sans (no Fraunces), German-formatted, tabular-nums.
+ * exact date. Body sans (not the display font), German-formatted, tabular-nums.
  */
 
 /** German number with a decimal comma + proper minus sign. */
@@ -51,7 +51,7 @@ export function AnswerBanner({ answer }: { answer: ResolvedAnswer }) {
           </div>
         )}
       </div>
-      {/* Big value pushed to the RIGHT edge. Body sans (NOT Fraunces) + bold +
+      {/* Big value pushed to the RIGHT edge. Body sans (not display) + bold +
           tabular-nums — German-formatted value. */}
       <div className="shrink-0 text-2xl font-bold tabular-nums text-brand-blue dark:text-sky-300">
         {big}

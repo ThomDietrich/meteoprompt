@@ -32,7 +32,9 @@ function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-title"
-      className={cn("text-sm font-semibold leading-none", className)}
+      // leading-snug (not leading-none) so g/p/y descenders aren't clipped,
+      // incl. when a title also has `truncate` (overflow-hidden).
+      className={cn("text-sm font-semibold leading-snug", className)}
       {...props}
     />
   );

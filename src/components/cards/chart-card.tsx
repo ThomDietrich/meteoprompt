@@ -127,7 +127,9 @@ export function ChartCard({
       <CardHeader className="card-drag-handle cursor-move select-none">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <CardTitle className="truncate">{spec.title}</CardTitle>
+            {/* pb-0.5 gives the truncate (overflow-hidden) box a hair of room so
+                g/p/y descenders clear; CardTitle now uses leading-snug too. */}
+            <CardTitle className="truncate pb-0.5">{spec.title}</CardTitle>
             <CardDescription className="truncate" title={originQuery}>
               {originQuery}
             </CardDescription>

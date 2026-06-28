@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { deriveQuerySpec, UnmappableQueryError } from "@/lib/claude";
 import { ChartShapeError, resolveChart } from "@/lib/flux";
+import { categorizeDataError } from "@/lib/query-error";
 import { logFailedQuery } from "@/lib/query-log";
 import type { AskResponse, ChartResult } from "@/lib/query-spec";
 
@@ -93,12 +94,14 @@ export async function POST(request: Request) {
         { status: 422 },
       );
     }
-    const status = /Missing InfluxDB configuration/.test(message) ? 503 : 500;
-    console.error("[api/ask] data step failed:", message);
-    await logFailedQuery({ query: q, reason: "server_error", detail: message, route: "/api/ask" });
+    // Interpret the data error (timeout / config / generic) → actionable German.
+    const { category, httpStatus, detail } = categorizeDataError(error);
+    console.error(`[api/ask] data step failed (${category}):`, message);
+    // Log the raw cause + the category so failed-queries.jsonl is analysable.
+    await logFailedQuery({ query: q, reason: category, detail: message, route: "/api/ask" });
     return NextResponse.json(
-      { error: "data_error", detail: message },
-      { status },
+      { error: "data_error", category, detail },
+      { status: httpStatus },
     );
   }
 }

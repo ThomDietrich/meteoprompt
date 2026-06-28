@@ -1,16 +1,16 @@
 import type { Metadata } from "next";
-import { Fraunces } from "next/font/google";
+import { Archivo_Black } from "next/font/google";
 
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 import "./globals.css";
 
-// Refined serif display font for the masthead title only (body stays sans).
-// Exposed as the CSS variable --font-display; used via the `font-display` class.
-const fraunces = Fraunces({
+// Bold grotesque display font for the "Wetterchatty" wordmark only (header +
+// footer); body stays sans. Exposed as --font-wordmark, used via `.font-wordmark`.
+const archivoBlack = Archivo_Black({
   subsets: ["latin"],
-  weight: ["600", "700"],
-  variable: "--font-fraunces",
+  weight: ["400"], // Archivo Black ships a single (black) weight
+  variable: "--font-wordmark",
   display: "swap",
 });
 
@@ -26,7 +26,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="de" className={fraunces.variable}>
+    <html lang="de" className={archivoBlack.variable}>
       <body className="flex min-h-screen flex-col antialiased">
         <Header />
         <div className="flex-1">{children}</div>
