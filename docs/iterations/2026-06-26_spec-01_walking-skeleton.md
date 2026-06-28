@@ -187,7 +187,7 @@ Alles läuft in Containern; **nicht** nativ. Die bestehende InfluxDB ist **exter
 ## 7. Projektstruktur (Soll)
 
 ```
-wetter-chat/
+meteoprompt/
 ├─ Dockerfile
 ├─ docker-compose.yml
 ├─ .dockerignore

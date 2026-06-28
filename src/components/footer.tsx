@@ -4,7 +4,7 @@ import { Sun } from "lucide-react";
 
 /**
  * Site footer — a calm, balanced counterpart to the masthead (spec-03 §3).
- * Two zones: LEFT a small Wappen + "Wetterchatty" wordmark + tagline; RIGHT the
+ * Two zones: LEFT a small Wappen + "MeteoPrompt" wordmark + tagline; RIGHT the
  * Impressum link + copyright. Two restrained on-brand decorations:
  * a soft GREEN HILL silhouette along the top edge (echoing the green hill of the
  * Nurzen coat of arms) and a faint GOLD sun glyph. Server component.
@@ -50,7 +50,7 @@ export function Footer() {
           </span>
           <div className="leading-tight">
             <p className="font-wordmark text-base tracking-tight text-brand-blue dark:text-sky-300">
-              Wetterchatty
+              MeteoPrompt
             </p>
             <p className="text-[13px] text-slate-500 dark:text-slate-400">
               Das interaktive Wetterportal für Nurzen
@@ -69,7 +69,7 @@ export function Footer() {
             </Link>
           </p>
           <p className="mt-1 text-slate-400 dark:text-slate-500">
-            © {year} Wetterchatty
+            © {year} MeteoPrompt
           </p>
         </div>
       </div>

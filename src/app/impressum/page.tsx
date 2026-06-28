@@ -14,8 +14,8 @@ import type { Metadata } from "next";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Impressum – Wetterchatty",
-  description: "Impressum und Anbieterkennzeichnung für Wetterchatty.",
+  title: "Impressum – MeteoPrompt",
+  description: "Impressum und Anbieterkennzeichnung für MeteoPrompt.",
 };
 
 const provider = {

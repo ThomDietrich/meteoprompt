@@ -10,7 +10,7 @@ import type { ChartSpec } from "@/lib/query-spec";
  * forward). See spec-02 §8. All reads happen client-side after mount.
  */
 
-const STORAGE_KEY = "wetter-chat:cards:v1";
+const STORAGE_KEY = "meteoprompt:cards:v1";
 
 export interface CardLayout {
   x: number;

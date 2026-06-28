@@ -3,7 +3,7 @@ import Image from "next/image";
 /**
  * Site masthead — a bold "Wappen-Farbband": a blue→green gradient band (Wappen
  * blue #1F5BA8 → green #2E9D46) capped by a thin gold accent line. The
- * "Wetterchatty" wordmark sits in Archivo Black (.font-wordmark), white, over
+ * "MeteoPrompt" wordmark sits in Archivo Black (.font-wordmark), white, over
  * the blue end of the band; the tagline in white. The Gemeinde-Wappen
  * rides on a white chip so it reads on the colour. Markant + farbig, aber wertig.
  * Wordmark + tagline are white over the blue-dominant left side → WCAG ≥4.5:1.
@@ -26,7 +26,7 @@ export function Header() {
         </span>
         <div className="leading-tight">
           <h1 className="font-wordmark text-xl uppercase tracking-tight text-white drop-shadow-sm sm:text-2xl">
-            Wetterchatty
+            MeteoPrompt
           </h1>
           <p className="mt-0.5 text-[13px] font-medium text-white">
             Das interaktive Wetterportal für Nurzen

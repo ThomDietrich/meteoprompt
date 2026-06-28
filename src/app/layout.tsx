@@ -5,7 +5,7 @@ import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 import "./globals.css";
 
-// Bold grotesque display font for the "Wetterchatty" wordmark only (header +
+// Bold grotesque display font for the "MeteoPrompt" wordmark only (header +
 // footer); body stays sans. Exposed as --font-wordmark, used via `.font-wordmark`.
 const archivoBlack = Archivo_Black({
   subsets: ["latin"],
@@ -15,7 +15,7 @@ const archivoBlack = Archivo_Black({
 });
 
 export const metadata: Metadata = {
-  title: "Wetterchatty – Das interaktive Wetterportal für Nurzen",
+  title: "MeteoPrompt – Das interaktive Wetterportal für Nurzen",
   description:
     "Das interaktive Wetterportal für Nurzen — Dashboard und Chat für die Zeitreihen der eigenen Wetterstation",
 };

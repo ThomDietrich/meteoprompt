@@ -339,7 +339,7 @@ Fehler/keine Daten → lesbarer Zustand pro Card (kein Crash, „keine Daten"-Hi
 ## 8. Persistenz (localStorage, pro Browser)
 
 - Gespeichert wird **pro Card**: `{ id, spec: ChartSpec, originQuery: string, layout: {x,y,w,h} }`
-  unter Schlüssel `wetter-chat:cards:v1`. **Nur Specs + Layout, keine Daten.**
+  unter Schlüssel `meteoprompt:cards:v1`. **Nur Specs + Layout, keine Daten.**
 - **Beim Laden:** Cards + Layout aus `localStorage` herstellen → für jede Card
   **`POST /api/chart` (ohne Claude)** → frische Daten. So sieht man nach einer Woche dieselben
   Cards mit aktuellen Werten (relative Zeiträume „rollen" mit).

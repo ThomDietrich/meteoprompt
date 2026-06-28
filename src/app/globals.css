@@ -18,7 +18,7 @@
 }
 
 /*
- * Bold grotesque display font for the "Wetterchatty" wordmark. A plain utility
+ * Bold grotesque display font for the "MeteoPrompt" wordmark. A plain utility
  * (not a @theme font token) because the family is backed by the next/font CSS
  * variable --font-wordmark, set on <html> in layout.tsx — referencing it from
  * @theme resolves before that variable exists. Applied via the `font-wordmark`

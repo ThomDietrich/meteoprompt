@@ -1,10 +1,10 @@
-# AGENTS.md — wetter-chat
+# AGENTS.md — meteoprompt
 
 Tool-agnostische Anweisungen für KI-Coding-Agenten in diesem Repo.
 (Claude Code lädt dies über `CLAUDE.md` → `@AGENTS.md`.) Single Source of Truth.
 
 ## Was das ist
-**wetter-chat** ist primär ein **Daten-Visualisierungs-Tool**: ein dynamisches Dashboard
+**meteoprompt** ist primär ein **Daten-Visualisierungs-Tool**: ein dynamisches Dashboard
 aus frei verschieb-/größenänderbaren **Cards**, jede mit einem ECharts-Diagramm oder einer
 TanStack-Tabelle auf Basis echter Zeitreihen aus einer bestehenden **InfluxDB**. (Ein
 Chat-Assistent ist ein geplanter späterer Aspekt, nicht Teil der frühen Iterationen.)

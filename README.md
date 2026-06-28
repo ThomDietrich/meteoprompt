@@ -1,4 +1,4 @@
-# wetter-chat
+# meteoprompt
 
 Ein **dynamisches Wetter-Dashboard** aus frei verschieb- und größenänderbaren Cards.
 Jede Card zeigt ein Diagramm (ECharts) oder eine Tabelle (TanStack) auf Basis echter
