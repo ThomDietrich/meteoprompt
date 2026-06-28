@@ -118,6 +118,10 @@ function shapedValues(shaped: ShapedData): { v: number; t: string | null }[] {
       return shaped.groups.flatMap((g) =>
         g.values.map((v) => ({ v, t: null })),
       );
+    case "showers":
+      // spec-07: one value per event = its total rainfall, timed at the event
+      // start → min/max/sum describe the strongest/weakest/total of the showers.
+      return shaped.showers.map((ev) => ({ v: ev.totalMm, t: ev.start }));
     default:
       return [];
   }

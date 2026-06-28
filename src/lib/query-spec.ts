@@ -31,6 +31,12 @@ export interface ChartSpec {
    * persisting it is optional (the client re-fetches via /api/chart anyway).
    */
   summary?: string;
+  /**
+   * spec-07: Minimum Inter-event Time in HOURS for the `showerBars` chart — the
+   * dry gap that separates two rain events. Optional; defaults to
+   * SHOWER_MIT_HOURS (4 h) when absent. Ignored for all other chart types.
+   */
+  mit?: number;
 }
 
 /**
@@ -72,6 +78,8 @@ export type ChartType =
   | "themeRiver"
   // v6: tabular rendering (TanStack Table)
   | "table"
+  // spec-07: rain grouped into discrete shower events (sessionized in-app)
+  | "showerBars"
   // reserved (not yet rendered)
   | "heatmap";
 
@@ -97,6 +105,7 @@ export const IMPLEMENTED_CHART_TYPES = [
   "barRange",
   "themeRiver",
   "table", // spec-06: rendered as a TanStack table (on explicit request / few values)
+  "showerBars", // spec-07: one bar per rain event (in-app sessionized shower)
 ] as const;
 export type ImplementedChartType = (typeof IMPLEMENTED_CHART_TYPES)[number];
 
@@ -219,6 +228,20 @@ export interface MatrixPoint {
 }
 
 /**
+ * spec-07: one discrete rain event ("shower") — a contiguous wet phase separated
+ * from the next by a dry gap ≥ MIT (Minimum Inter-event Time). Sessionized in-app
+ * from the rain accumulator's wet increments. `totalMm` is the summed rainfall of
+ * the event, `peakRateMmH` the strongest per-interval increment scaled to mm/h.
+ */
+export interface ShowerEvent {
+  start: string; // ISO timestamp of the first wet reading
+  end: string; // ISO timestamp of the last wet reading
+  durationH: number; // (end − start) in hours
+  totalMm: number; // Σ increments over the event
+  peakRateMmH: number; // max per-interval rain rate (mm/h)
+}
+
+/**
  * Shaped payloads for the non-line chart types (spec-04 §6/§7). A ResolvedSeries
  * carries `points` for time-series types and optionally one shaped payload that
  * matches its chart type. `shape` discriminates which field is populated.
@@ -230,7 +253,8 @@ export type ShapedData =
   | { shape: "calendar"; calendar: CalendarPoint[] }
   | { shape: "matrix"; matrix: MatrixPoint[] }
   | { shape: "scalar"; scalar: number | null }
-  | { shape: "distribution"; groups: { label: string; values: number[] }[] };
+  | { shape: "distribution"; groups: { label: string; values: number[] }[] }
+  | { shape: "showers"; showers: ShowerEvent[] };
 
 export interface ResolvedSeries {
   id: string;

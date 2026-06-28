@@ -10,15 +10,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { PERMANENT_CHARTS } from "@/lib/permanent-dashboard";
+import { PERMANENT_GROUPS } from "@/lib/permanent-dashboard";
 import type { ChartResponse, ChartSpec, ResolvedSeries } from "@/lib/query-spec";
 
 /**
- * Permanent "Stations-Dashboard": a fixed, responsive CSS grid of the 12
- * predefined charts (spec-04 §8), now spanning many chart types. NOT
- * react-grid-layout — not draggable, resizable, or deletable, and never
- * persisted. Each chart resolves its data through the existing /api/chart path
- * (no Claude). Charts reflow on container resize via ResizeObserver.
+ * Permanent "Stations-Dashboard" (spec-07): the 16 predefined charts grouped into
+ * 5 vertically-stacked, full-width GROUP cards. Inside each card a responsive
+ * sub-grid (Desktop 2/Reihe, mobil 1) of graph blocks; under every graph a short,
+ * STATIC German caption (always visible — no Claude). NOT react-grid-layout — not
+ * draggable, resizable, or deletable, and never persisted. Each graph resolves its
+ * data through the existing /api/chart path (no Claude). Charts reflow on
+ * container resize via ResizeObserver.
  */
 
 type LoadState =
@@ -26,7 +28,12 @@ type LoadState =
   | { status: "error"; message: string }
   | { status: "ready"; series: ResolvedSeries[] };
 
-function PermanentChartCard({ spec }: { spec: ChartSpec }) {
+/**
+ * The inner chart + its load/resize/empty/error state for ONE graph — WITHOUT an
+ * outer Card (the group card is the outer container). A fixed graph height that
+ * reflows via ResizeObserver; collapses cleanly to 1 column on mobile.
+ */
+function PermanentChart({ spec }: { spec: ChartSpec }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const chartRef = useRef<EChartsReact>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -87,49 +94,68 @@ function PermanentChartCard({ spec }: { spec: ChartSpec }) {
     };
   }, []);
 
-  const isEmpty =
-    state.status === "ready" && isChartEmpty(state.series);
+  const isEmpty = state.status === "ready" && isChartEmpty(state.series);
 
   return (
-    <Card className="h-80">
-      <CardHeader>
-        <CardTitle>{spec.title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div ref={containerRef} className="h-full w-full">
-          {state.status === "loading" && (
-            <div className="h-full w-full animate-pulse rounded-md bg-slate-200/60 dark:bg-slate-700/40" />
-          )}
-          {state.status === "error" && (
-            <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-center">
-              <p className="text-sm font-medium text-red-600 dark:text-red-400">
-                Daten konnten nicht geladen werden
-              </p>
-              <p className="max-w-xs text-xs text-slate-500 dark:text-slate-400">
-                {state.message}
-              </p>
-            </div>
-          )}
-          {state.status === "ready" && isEmpty && (
-            <div className="flex h-full w-full items-center justify-center">
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                Keine Daten im gewählten Zeitraum.
-              </p>
-            </div>
-          )}
-          {state.status === "ready" && !isEmpty &&
-            renderChart(spec, state.series, chartRef)}
+    <div ref={containerRef} className="h-64 w-full">
+      {state.status === "loading" && (
+        <div className="h-full w-full animate-pulse rounded-md bg-slate-200/60 dark:bg-slate-700/40" />
+      )}
+      {state.status === "error" && (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-center">
+          <p className="text-sm font-medium text-red-600 dark:text-red-400">
+            Daten konnten nicht geladen werden
+          </p>
+          <p className="max-w-xs text-xs text-slate-500 dark:text-slate-400">
+            {state.message}
+          </p>
         </div>
-      </CardContent>
-    </Card>
+      )}
+      {state.status === "ready" && isEmpty && (
+        <div className="flex h-full w-full items-center justify-center">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Keine Daten im gewählten Zeitraum.
+          </p>
+        </div>
+      )}
+      {state.status === "ready" && !isEmpty &&
+        renderChart(spec, state.series, chartRef)}
+    </div>
+  );
+}
+
+/**
+ * One graph block: the chart title, the chart itself, and the always-visible
+ * static caption below it. Stacks cleanly inside the responsive sub-grid.
+ */
+function GraphBlock({ spec, caption }: { spec: ChartSpec; caption: string }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+        {spec.title}
+      </p>
+      <PermanentChart spec={spec} />
+      <p className="text-sm text-slate-500 dark:text-slate-400">{caption}</p>
+    </div>
   );
 }
 
 export default function PermanentDashboard() {
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {PERMANENT_CHARTS.map((spec) => (
-        <PermanentChartCard key={spec.id} spec={spec} />
+    <div className="flex flex-col gap-4">
+      {PERMANENT_GROUPS.map((group) => (
+        <Card key={group.id}>
+          <CardHeader>
+            <CardTitle className="text-base">{group.title}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 gap-x-6 gap-y-8 md:grid-cols-2">
+              {group.charts.map((g) => (
+                <GraphBlock key={g.spec.id} spec={g.spec} caption={g.caption} />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       ))}
     </div>
   );

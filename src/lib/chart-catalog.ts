@@ -116,6 +116,12 @@ export const CHART_CATALOG: ChartCatalogEntry[] = [
       "Tabelle (Zeit + Wert je Serie) — NUR wenn der Nutzer ausdrücklich danach fragt („als Tabelle“, „tabellarisch“, „liste“, „exportieren“) ODER nur wenige diskrete Werte verglichen werden (z. B. „Ø-Temperatur der letzten 3 Tage“, „Monatsmittel je Monat“). Sonst Diagramm bevorzugen.",
     dataShape: "multi_series",
   },
+  {
+    chart: "showerBars",
+    fitsFor:
+      "Regenmenge je zusammenhängendem Regen-Event („pro Schauer / je Schauer / pro Regenfall / pro Regen-Event / Regenschauer / shower / rain event“) — ein Balken pro Schauer, NICHT pro Tag/Stunde. NUR die Metrik 'rainfall'. Ein längerer Zeitraum (z. B. -90d). Nicht über Smart-Variety wählen — nur bei expliziten Schauer-/Event-Triggern.",
+    dataShape: "single_series",
+  },
 ];
 
 const BY_CHART = new Map<ChartType, ChartCatalogEntry>(

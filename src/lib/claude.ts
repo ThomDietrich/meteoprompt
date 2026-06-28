@@ -173,6 +173,11 @@ const QUERY_SPEC_TOOL: Anthropic.Tool = {
               },
               required: ["start"],
             },
+            mit: {
+              type: "number",
+              description:
+                "ONLY for chart 'showerBars': the Minimum Inter-event Time in HOURS — the dry pause that separates two rain events. Set ONLY if the user names one explicitly (e.g. „mit 6 h Pause“ → 6). Otherwise OMIT (default 4 h).",
+            },
             series: {
               type: "array",
               minItems: 1,
@@ -302,6 +307,12 @@ INTELLIGENZ — diese Fragen JETZT BEANTWORTEN (reason "ok", NICHT ablehnen):
   ZWEI series GLEICHER Metrik, jede mit EIGENEM timeRange (die zwei Perioden). Backend überlagert sie.
 - DERIVED Gradtage ("Heizgradtage/HDD", "Wachstumsgradtage/GDD", "Kühlgradtage/CDD"): chart "line", eine
   series mit transform "hdd"|"gdd"|"cdd", metric "outdoor_temperature", ggf. base (GDD 10, HDD/CDD 18 °C).
+- REGEN PRO SCHAUER/EVENT — Trigger-Wörter „pro Schauer / je Schauer / pro Regenfall / pro Regen-Event /
+  Regenschauer / shower / rain event": chart "showerBars", EINE series mit metric "rainfall" (aggregation
+  "sum"). Das Backend gruppiert die Regen-Inkremente zu zusammenhängenden Events (ein Balken je Schauer,
+  Höhe = Gesamtmenge), NICHT pro Tag/Stunde. Default-Zeitraum -90d, sofern der Nutzer keinen anderen nennt.
+  Nennt der Nutzer eine Trockenpause („… mit 6 h Pause"), setze "mit" auf die Stundenzahl, sonst weglassen
+  (Default 4 h). Eine NORMALE Regen-Frage („wie viel Regen", „Tagesregen") bleibt "bars" auf "rainfall".
 
 KLASSIFIZIERUNG (Feld "reason", IMMER setzen):
 - "ok": alles aus der eigenen Stationshistorie beantwortbar (inkl. Rekord/Aggregat/Count/Vergleich/Gradtage).
@@ -469,6 +480,11 @@ function validateChart(raw: unknown, idx: number): ChartSpec {
   const series = seriesRaw.map((s, si) => validateSeries(s, idx, si));
   const binning = validateBinning(r.binning);
   const answer = validateAnswer(r.answer);
+  // spec-07: explicit Minimum Inter-event Time (hours) for showerBars only.
+  const mit =
+    typeof r.mit === "number" && Number.isFinite(r.mit) && r.mit > 0
+      ? r.mit
+      : undefined;
 
   return {
     id: `c${idx}`,
@@ -478,6 +494,7 @@ function validateChart(raw: unknown, idx: number): ChartSpec {
     series,
     ...(binning ? { binning } : {}),
     ...(answer ? { answer } : {}),
+    ...(mit != null ? { mit } : {}),
   };
 }
 

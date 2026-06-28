@@ -13,6 +13,7 @@ import {
   runFluxScalar,
 } from "@/lib/influx";
 import { KENNWERTE, type KennwertValue } from "@/lib/kennwerte";
+import { groupShowers, SHOWER_MIT_HOURS } from "@/lib/shower";
 import {
   applyTransform,
   defaultBase,
@@ -206,6 +207,17 @@ function aggregationFn(agg: string): "mean" | "sum" | "min" | "max" {
   }
 }
 
+/**
+ * Calendar-month/year buckets read better labelled at their START (the month
+ * they represent). `aggregateWindow` defaults to the bucket's `_stop` (the NEXT
+ * boundary), so on a time axis a monthly bar drifts to the right and reads as the
+ * following month (May's total sitting on the May/June line looks like June).
+ * No-op for sub-month windows so daily/hourly charts are unchanged.
+ */
+function timeSrcClause(window: string): string {
+  return /(mo|y)$/.test(window) ? ', timeSrc: "_start"' : "";
+}
+
 /** Build the Flux for one metric series against the resolved catalog entry. */
 function buildSeriesFlux(
   bucket: string,
@@ -238,9 +250,17 @@ function buildSeriesFlux(
       cat.defaultWindow,
     );
     const window = adaptiveWindow(timeRange, requested);
+    // group(entity_id) BEFORE difference: the bucket is sharded (a storage-shard
+    // boundary in the range splits one series into several tables), and both
+    // difference() AND sum() run PER TABLE — so a window straddling the boundary
+    // would emit a duplicate bucket and a long range would sum to several partial
+    // totals. Collapsing to one table per entity bridges the shard boundary so the
+    // difference is continuous and the monthly/daily sums are correct. (No-op for
+    // single-shard ranges.) See docs/data-quality-influxdb.md.
     return `${base}
+  |> group(columns: ["entity_id"])
   |> difference(nonNegative: true)
-  |> aggregateWindow(every: ${window}, fn: sum, createEmpty: false)
+  |> aggregateWindow(every: ${window}, fn: sum, createEmpty: false${timeSrcClause(window)})
   ${TERMINAL_SORT}
   |> yield(name: "${series.id}")`;
   }
@@ -262,7 +282,7 @@ function buildSeriesFlux(
     const window = adaptiveWindow(timeRange, requested);
     return `${base}
   |> aggregateWindow(every: ${dedup}, fn: last, createEmpty: false)
-  |> aggregateWindow(every: ${window}, fn: sum, createEmpty: false)
+  |> aggregateWindow(every: ${window}, fn: sum, createEmpty: false${timeSrcClause(window)})
   ${TERMINAL_SORT}
   |> yield(name: "${series.id}")`;
   }
@@ -281,9 +301,36 @@ function buildSeriesFlux(
   );
   const window = adaptiveWindow(timeRange, requested);
   return `${base}
-  |> aggregateWindow(every: ${window}, fn: ${aggregationFn(agg)}, createEmpty: false)
+  |> aggregateWindow(every: ${window}, fn: ${aggregationFn(agg)}, createEmpty: false${timeSrcClause(window)})
   ${TERMINAL_SORT}
   |> yield(name: "${series.id}")`;
+}
+
+/**
+ * spec-07 — fetch the rain accumulator's WET INCREMENTS at archive resolution
+ * for shower sessionization (NO aggregateWindow/sum — the app groups them).
+ * `difference(nonNegative:true)` turns the daily accumulator into per-reading
+ * increments (and caps the midnight reset + identical HA-oversampled values →
+ * diff 0); `filter(_value > 0)` keeps only wet readings; group(entity_id) bridges
+ * the storage-shard boundary (see the rainCounter note). TERMINAL_SORT guarantees
+ * chronological order for the in-app walk.
+ */
+function buildRainIncrementsFlux(
+  bucket: string,
+  cat: CatalogEntry,
+  timeRange: TimeRange,
+): string {
+  const start = sanitizeRangeToken(timeRange.start, "-90d");
+  const stop = sanitizeRangeToken(timeRange.stop ?? "now", "now()");
+  return `${TZ_PREAMBLE}from(bucket: "${bucket}")
+  |> range(start: ${start}, stop: ${stop})
+  |> filter(fn: (r) => r["entity_id"] == "${cat.entityId}")
+  |> filter(fn: (r) => r["_field"] == "value")
+  |> group(columns: ["entity_id"])
+  |> difference(nonNegative: true)
+  |> filter(fn: (r) => r._value > 0.0)
+  ${TERMINAL_SORT}
+  |> yield(name: "increments")`;
 }
 
 /**
@@ -837,6 +884,21 @@ async function shapeChart(
       return [
         { ...baseSeries(sc), shaped: { shape: "distribution", groups } },
       ];
+    }
+
+    // ── Regen pro Schauer: rain increments → in-app sessionized events ─────
+    case "showerBars": {
+      const sc = scs[0];
+      // Fetch the wet increments (no aggregateWindow/sum) then group in-app.
+      const increments = await runFluxPoints(
+        buildRainIncrementsFlux(bucket, sc.cat, spec.timeRange),
+      );
+      const mit =
+        typeof spec.mit === "number" && spec.mit > 0
+          ? spec.mit
+          : SHOWER_MIT_HOURS;
+      const showers = groupShowers(increments, mit);
+      return [{ ...baseSeries(sc), shaped: { shape: "showers", showers } }];
     }
 
     // ── Radar / themeRiver: several metrics, time-series points ────────────

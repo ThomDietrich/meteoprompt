@@ -17,6 +17,7 @@ import { RadarChart } from "@/components/charts/radar-chart";
 import { ViolinChart } from "@/components/charts/violin-chart";
 import { ThemeRiverChart } from "@/components/charts/theme-river-chart";
 import { TableCard } from "@/components/charts/table-card";
+import { ShowerBarsChart } from "@/components/charts/shower-bars-chart";
 import type {
   ChartSpec,
   ResolvedAnswer,
@@ -64,6 +65,9 @@ export function renderChart(
     case "table":
       // Tabellen-Card (spec-06 B): TanStack Table, no ECharts ref needed.
       return <TableCard series={series} />;
+    case "showerBars":
+      // spec-07: one bar per sessionized rain event, custom tooltip.
+      return <ShowerBarsChart ref={chartRef} series={series} />;
     case "line":
     default: {
       // An extreme answer with a timestamp → highlight it on the line.
@@ -106,6 +110,8 @@ export function isChartEmpty(series: ResolvedSeries[]): boolean {
         return shaped.scalar == null;
       case "distribution":
         return shaped.groups.every((g) => g.values.length === 0);
+      case "showers":
+        return shaped.showers.length === 0;
       default:
         return true;
     }
