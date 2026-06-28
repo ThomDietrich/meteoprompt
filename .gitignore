@@ -69,8 +69,11 @@ Thumbs.db
 *.pem
 
 # ──────────────────────────────────────────────────────────────
-# Docker (local overrides)
+# Docker — your own compose is yours (copy from docker-compose.dist.yaml).
+# Only docker-compose.dist.yaml is tracked.
 # ──────────────────────────────────────────────────────────────
+docker-compose.yaml
+docker-compose.yml
 docker-compose.override.yml
 docker-compose.override.yaml
 

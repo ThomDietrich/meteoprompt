@@ -1,0 +1,57 @@
+# MeteoPrompt — deployment template. Copy this to your own (gitignored) compose
+# file and adjust it to your host:
+#
+#   cp docker-compose.dist.yaml docker-compose.yaml
+#   cp .env.example .env          # then fill in the secrets/config in .env
+#   # add your reverse-proxy bits to docker-compose.yaml, then:
+#   docker compose up -d --build
+#
+# This single file is the whole template — production by default. Wire your own
+# reverse proxy (Traefik labels / network, see the commented block). Secrets live
+# in .env (see .env.example).
+
+name: meteoprompt
+
+services:
+  web:
+    build:
+      context: .
+      target: runner            # production: standalone server (node server.js).
+      # For local development with hot reload, swap to the dev target and add the
+      # two keys below the build block:
+      #   target: dev
+      #   command: npm run dev
+      #   volumes: ["./:/app", "node_modules:/app/node_modules", "next_cache:/app/.next", "app_data:/app/data"]
+    restart: unless-stopped
+
+    env_file:
+      - .env                     # INFLUXDB_*, ANTHROPIC_API_KEY, IMPRESSUM_*, SITE_TAGLINE
+    environment:
+      - TZ=Europe/Berlin
+      - NEXT_TELEMETRY_DISABLED=1
+
+    volumes:
+      - app_data:/app/data        # pinned cards + failed-query log (persist this)
+
+    # A reverse proxy on the same host reaches the app here; remove this if you
+    # route via a proxy network + labels instead.
+    ports:
+      - "127.0.0.1:3000:3000"
+
+    # --- Example: expose via an existing Traefik (uncomment + adjust to your setup) ---
+    # networks: [proxy]
+    # labels:
+    #   - "traefik.enable=true"
+    #   - "traefik.http.routers.meteoprompt.rule=Host(`meteo.example.com`)"
+    #   - "traefik.http.routers.meteoprompt.entrypoints=websecure"
+    #   - "traefik.http.routers.meteoprompt.tls.certresolver=myresolver"
+    #   - "traefik.http.services.meteoprompt.loadbalancer.server.port=3000"
+
+volumes:
+  app_data:
+  # node_modules:   # only needed if you switch the build to the dev target
+  # next_cache:
+
+# networks:
+#   proxy:
+#     external: true

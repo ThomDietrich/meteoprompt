@@ -74,8 +74,10 @@ not part of the app's runtime.
 ## Quick start
 
 ```bash
-cp .env.example .env          # then fill in the values (see Configuration)
-docker compose up             # → http://localhost:3000
+cp docker-compose.dist.yaml docker-compose.yaml   # your own compose (gitignored)
+cp .env.example .env                              # then fill in the values (see Configuration)
+# for local dev, set the build target to `dev` in docker-compose.yaml (see its comments)
+docker compose up                                 # → http://localhost:3000
 ```
 
 ## Configuration (`.env`)
@@ -107,25 +109,24 @@ Per-iteration scope and acceptance criteria live under
 
 ## Deployment
 
-`docker-compose.yml` is the **dev** setup (hot reload). For production use the
-committed, proxy-agnostic **`docker-compose.prod.yml`** (Dockerfile `runner` target,
-standalone server on `127.0.0.1:3000`, `/app/data` volume):
+Only **`docker-compose.dist.yaml`** is tracked. Copy it to your own (gitignored)
+`docker-compose.yaml` and shape it to your host — it defaults to the production
+`runner` target (standalone server on `127.0.0.1:3000`, `app_data` volume):
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build
+cp docker-compose.dist.yaml docker-compose.yaml
+cp .env.example .env                  # fill in INFLUXDB_*, ANTHROPIC_API_KEY, IMPRESSUM_*, SITE_TAGLINE
+# add your reverse-proxy bits (e.g. Traefik labels / network) to docker-compose.yaml
+docker compose up -d --build
 ```
 
-Server-specific bits that should **not** be committed (reverse-proxy labels, networks)
-go into a gitignored **`docker-compose.override.yml`** — Compose merges it automatically.
-Copy the template and layer it on top:
+`docker-compose.yaml` / `docker-compose.yml` are gitignored, so `git pull` never
+touches your deployment file. Bring your own reverse proxy + TLS (Traefik / nginx /
+Caddy) — the dist file has a commented Traefik example. (For local development, switch
+the build target to `dev` for hot reload, as noted in the file.)
 
-```bash
-cp docker-compose.override.yml.example docker-compose.override.yml   # then edit
-docker compose -f docker-compose.prod.yml -f docker-compose.override.yml up -d --build
-```
-
-Provide a `.env` at runtime (`INFLUXDB_*`, `ANTHROPIC_API_KEY`, `IMPRESSUM_*`,
-`SITE_TAGLINE`) and bring your own reverse proxy + TLS (Traefik / nginx / Caddy).
+> **Production, not dev:** the `runner` target is required behind a proxy on another
+> host. Running `next dev` there blocks its HMR resources cross-origin → a blank page.
 
 ## License
 
