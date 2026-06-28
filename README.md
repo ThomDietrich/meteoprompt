@@ -107,9 +107,25 @@ Per-iteration scope and acceptance criteria live under
 
 ## Deployment
 
-Use the production Docker target (`runner` stage) behind a reverse proxy
-(Caddy / nginx / Traefik) for TLS. Provide `.env` at runtime, and mount a volume at
-`/app/data` for the pinned cards and the failed-query log.
+`docker-compose.yml` is the **dev** setup (hot reload). For production use the
+committed, proxy-agnostic **`docker-compose.prod.yml`** (Dockerfile `runner` target,
+standalone server on `127.0.0.1:3000`, `/app/data` volume):
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Server-specific bits that should **not** be committed (reverse-proxy labels, networks)
+go into a gitignored **`docker-compose.override.yml`** — Compose merges it automatically.
+Copy the template and layer it on top:
+
+```bash
+cp docker-compose.override.yml.example docker-compose.override.yml   # then edit
+docker compose -f docker-compose.prod.yml -f docker-compose.override.yml up -d --build
+```
+
+Provide a `.env` at runtime (`INFLUXDB_*`, `ANTHROPIC_API_KEY`, `IMPRESSUM_*`,
+`SITE_TAGLINE`) and bring your own reverse proxy + TLS (Traefik / nginx / Caddy).
 
 ## License
 

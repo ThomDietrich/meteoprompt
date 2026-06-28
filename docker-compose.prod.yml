@@ -1,0 +1,34 @@
+# Production base — self-contained standalone server (Dockerfile `runner` target,
+# `node server.js`, NODE_ENV=production). Proxy-agnostic: it publishes the app on
+# 127.0.0.1:3000 so a reverse proxy on the same host (Traefik / nginx / Caddy)
+# can route to it. Bring your own TLS + routing.
+#
+# Run it on the server:
+#     docker compose -f docker-compose.prod.yml up -d --build
+#
+# For server-specific bits that must NOT be committed (Traefik labels, networks),
+# add a gitignored docker-compose.override.yml (see docker-compose.override.yml.example)
+# and layer it:
+#     docker compose -f docker-compose.prod.yml -f docker-compose.override.yml up -d --build
+#
+# Requires a .env on the server (INFLUXDB_*, ANTHROPIC_API_KEY, IMPRESSUM_*, SITE_TAGLINE).
+name: meteoprompt
+
+services:
+  web:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - TZ=Europe/Berlin
+      - NEXT_TELEMETRY_DISABLED=1
+    ports:
+      - "127.0.0.1:3000:3000"   # localhost only — the reverse proxy terminates TLS
+    volumes:
+      - app_data:/app/data       # pinned cards + failed-query log
+
+volumes:
+  app_data:

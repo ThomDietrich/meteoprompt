@@ -1,0 +1,33 @@
+# Server/local Docker Compose override — TEMPLATE.
+#
+# Copy to `docker-compose.override.yml` (which is gitignored) and put your
+# environment-specific bits here. Compose auto-merges the override with the base
+# on `docker compose up`, so values here win without touching the committed files.
+#
+#   cp docker-compose.override.yml.example docker-compose.override.yml
+#   # edit, then:
+#   docker compose -f docker-compose.prod.yml -f docker-compose.override.yml up -d --build
+#
+# The example below shows how to expose the `web` service via an existing Traefik.
+# Fill in YOUR router rule / host / certresolver — the proxy specifics are yours.
+
+services:
+  web:
+    # When Traefik routes via a shared Docker network, you usually DON'T publish a
+    # host port. To drop the base's 127.0.0.1:3000 binding, override it to empty:
+    # ports: []
+    #
+    # Join your existing Traefik network:
+    # networks:
+    #   - traefik
+
+    labels:
+      - "traefik.enable=true"
+      # - "traefik.http.routers.meteoprompt.rule=Host(`meteo.example.com`)"
+      # - "traefik.http.routers.meteoprompt.entrypoints=websecure"
+      # - "traefik.http.routers.meteoprompt.tls.certresolver=myresolver"
+      # - "traefik.http.services.meteoprompt.loadbalancer.server.port=3000"
+
+# networks:
+#   traefik:
+#     external: true
