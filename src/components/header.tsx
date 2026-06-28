@@ -1,5 +1,7 @@
 import Image from "next/image";
 
+import { siteTagline } from "@/lib/site";
+
 /**
  * Site masthead — a bold "Wappen-Farbband": a blue→green gradient band (Wappen
  * blue #1F5BA8 → green #2E9D46) capped by a thin gold accent line. The
@@ -25,11 +27,11 @@ export function Header() {
           />
         </span>
         <div className="leading-tight">
-          <h1 className="font-wordmark text-xl uppercase tracking-tight text-white drop-shadow-sm sm:text-2xl">
+          <h1 className="font-wordmark text-xl tracking-tight text-white drop-shadow-sm sm:text-2xl">
             MeteoPrompt
           </h1>
           <p className="mt-0.5 text-[13px] font-medium text-white">
-            Das interaktive Wetterportal für Nurzen
+            {siteTagline()}
           </p>
         </div>
       </div>

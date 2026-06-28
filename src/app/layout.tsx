@@ -3,6 +3,7 @@ import { Archivo_Black } from "next/font/google";
 
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
+import { siteTagline } from "@/lib/site";
 import "./globals.css";
 
 // Bold grotesque display font for the "MeteoPrompt" wordmark only (header +
@@ -14,11 +15,17 @@ const archivoBlack = Archivo_Black({
   display: "swap",
 });
 
-export const metadata: Metadata = {
-  title: "MeteoPrompt – Das interaktive Wetterportal für Nurzen",
-  description:
-    "Das interaktive Wetterportal für Nurzen — Dashboard und Chat für die Zeitreihen der eigenen Wetterstation",
-};
+// Render dynamically so the env-driven tagline (SITE_TAGLINE) resolves at
+// runtime from the container's environment, not at build time.
+export const dynamic = "force-dynamic";
+
+export function generateMetadata(): Metadata {
+  const tagline = siteTagline();
+  return {
+    title: `MeteoPrompt – ${tagline}`,
+    description: `MeteoPrompt — ${tagline}. Die Zeitreihen der eigenen Wetterstation per Prompt erkunden.`,
+  };
+}
 
 export default function RootLayout({
   children,

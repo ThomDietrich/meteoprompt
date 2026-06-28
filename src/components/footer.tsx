@@ -2,6 +2,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { Sun } from "lucide-react";
 
+import { siteTagline } from "@/lib/site";
+
 /**
  * Site footer — a calm, balanced counterpart to the masthead (spec-03 §3).
  * Two zones: LEFT a small Wappen + "MeteoPrompt" wordmark + tagline; RIGHT the
@@ -53,7 +55,7 @@ export function Footer() {
               MeteoPrompt
             </p>
             <p className="text-[13px] text-slate-500 dark:text-slate-400">
-              Das interaktive Wetterportal für Nurzen
+              {siteTagline()}
             </p>
           </div>
         </div>
