@@ -110,6 +110,12 @@ export const CHART_CATALOG: ChartCatalogEntry[] = [
       "Mehrere Sensor-Ströme proportional über Zeit (Saison-Überblick). Mehrere Metriken.",
     dataShape: "multi_metrics",
   },
+  {
+    chart: "table",
+    fitsFor:
+      "Tabelle (Zeit + Wert je Serie) — NUR wenn der Nutzer ausdrücklich danach fragt („als Tabelle“, „tabellarisch“, „liste“, „exportieren“) ODER nur wenige diskrete Werte verglichen werden (z. B. „Ø-Temperatur der letzten 3 Tage“, „Monatsmittel je Monat“). Sonst Diagramm bevorzugen.",
+    dataShape: "multi_series",
+  },
 ];
 
 const BY_CHART = new Map<ChartType, ChartCatalogEntry>(

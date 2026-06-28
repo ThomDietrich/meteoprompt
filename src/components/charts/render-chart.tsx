@@ -16,6 +16,7 @@ import { BoxplotChart } from "@/components/charts/boxplot-chart";
 import { RadarChart } from "@/components/charts/radar-chart";
 import { ViolinChart } from "@/components/charts/violin-chart";
 import { ThemeRiverChart } from "@/components/charts/theme-river-chart";
+import { TableCard } from "@/components/charts/table-card";
 import type {
   ChartSpec,
   ResolvedAnswer,
@@ -60,6 +61,9 @@ export function renderChart(
       return <ViolinChart ref={chartRef} series={series} />;
     case "themeRiver":
       return <ThemeRiverChart ref={chartRef} series={series} />;
+    case "table":
+      // Tabellen-Card (spec-06 B): TanStack Table, no ECharts ref needed.
+      return <TableCard series={series} />;
     case "line":
     default: {
       // An extreme answer with a timestamp → highlight it on the line.

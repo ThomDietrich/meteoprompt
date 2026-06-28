@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Pin, PinOff, RefreshCw, Trash2 } from "lucide-react";
+import { Check, Copy, Download, Pin, PinOff, RefreshCw, Trash2 } from "lucide-react";
 import type EChartsReact from "echarts-for-react";
 
 import { isChartEmpty, renderChart } from "@/components/charts/render-chart";
@@ -13,6 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { downloadSeriesCsv } from "@/lib/csv";
 import type {
   ChartResponse,
   ChartSpec,
@@ -21,18 +22,28 @@ import type {
 } from "@/lib/query-spec";
 
 /**
- * Generic chart card: header (title + origin-query line + regenerate + trash
- * icons), a renderer switch by ChartSpec.chart, and loading/error/empty states.
- * Fetches its own data from /api/chart on mount (no Claude) so new cards and
- * reload-rehydrated cards follow the same path. ResizeObserver drives
- * chart.resize() on grid resize. The "Neu erstellen" button (spec-04 §5b) asks
- * the parent to re-roll this card's chart type + colours in place.
+ * Generic chart card: header (title + origin-query line + action icons), a
+ * renderer switch by ChartSpec.chart, and loading/error/empty states. Fetches
+ * its own data from /api/chart on mount. For NL cards (those with an
+ * originQuery) it also passes the originQuery so the route (re)generates the
+ * spec-06 data-grounded summary, rendered UNDER the chart. ResizeObserver drives
+ * chart.resize() on grid resize.
+ *
+ * spec-06 additions: the summary text under the chart, a "Prompt kopieren"
+ * (Copy) button and a "Als CSV herunterladen" (Download) button in the action
+ * row. Copy + summary appear only on cards WITH an originQuery; CSV appears on
+ * every card.
  */
 
 type LoadState =
   | { status: "loading" }
   | { status: "error"; message: string }
-  | { status: "ready"; series: ResolvedSeries[]; answer?: ResolvedAnswer };
+  | {
+      status: "ready";
+      series: ResolvedSeries[];
+      answer?: ResolvedAnswer;
+      summary?: string;
+    };
 
 export function ChartCard({
   spec,
@@ -54,8 +65,14 @@ export function ChartCard({
   onUnpin?: () => void;
 }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [copied, setCopied] = useState(false);
   const chartRef = useRef<EChartsReact>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // An NL/pinned card carries a non-empty origin query → it gets a summary +
+  // copy button. (The permanent dashboard never uses ChartCard, so it never
+  // triggers a summary call.)
+  const hasQuery = originQuery.trim().length > 0;
 
   // Fetch this card's data once on mount (and whenever the spec identity changes).
   useEffect(() => {
@@ -67,7 +84,10 @@ export function ChartCard({
         const res = await fetch("/api/chart", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ spec }),
+          // Pass originQuery only for NL cards → route (re)generates the summary.
+          body: JSON.stringify(
+            hasQuery ? { spec, originQuery } : { spec },
+          ),
         });
         if (!res.ok) {
           let detail = `HTTP ${res.status}`;
@@ -81,7 +101,12 @@ export function ChartCard({
         }
         const data = (await res.json()) as ChartResponse;
         if (!cancelled)
-          setState({ status: "ready", series: data.series, answer: data.answer });
+          setState({
+            status: "ready",
+            series: data.series,
+            answer: data.answer,
+            summary: data.summary,
+          });
       } catch (error) {
         if (!cancelled) {
           setState({
@@ -97,7 +122,7 @@ export function ChartCard({
     return () => {
       cancelled = true;
     };
-  }, [spec]);
+  }, [spec, originQuery, hasQuery]);
 
   // Reflow the chart whenever the card container is resized (grid resize/drag).
   useEffect(() => {
@@ -119,8 +144,26 @@ export function ChartCard({
     };
   }, []);
 
-  const isEmpty =
-    state.status === "ready" && isChartEmpty(state.series);
+  const isEmpty = state.status === "ready" && isChartEmpty(state.series);
+
+  // Copy the original prompt to the clipboard with brief "Kopiert" feedback.
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(originQuery);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard blocked (insecure context / permission) — non-fatal.
+    }
+  };
+
+  // Build + download a CSV of the loaded data points (client-side only).
+  const handleDownload = () => {
+    if (state.status !== "ready") return;
+    downloadSeriesCsv(spec.title, state.series);
+  };
+
+  const canDownload = state.status === "ready" && !isEmpty;
 
   return (
     <Card className="h-full w-full">
@@ -135,6 +178,41 @@ export function ChartCard({
             </CardDescription>
           </div>
           <div className="flex shrink-0 items-center gap-0.5">
+            {/* CSV download — on EVERY card (charts + tables, NL + permanent). */}
+            <button
+              type="button"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDownload();
+              }}
+              disabled={!canDownload}
+              aria-label="Als CSV herunterladen"
+              title="Als CSV herunterladen"
+              className="rounded-md p-1 text-slate-400 transition-colors hover:bg-emerald-50 hover:text-emerald-600 disabled:opacity-40 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-400"
+            >
+              <Download className="h-4 w-4" />
+            </button>
+            {/* Copy original prompt — only on cards WITH an origin query. */}
+            {hasQuery && (
+              <button
+                type="button"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCopy();
+                }}
+                aria-label="Prompt kopieren"
+                title={copied ? "Kopiert" : "Prompt kopieren"}
+                className="rounded-md p-1 text-slate-400 transition-colors hover:bg-sky-50 hover:text-brand-blue dark:hover:bg-sky-950/40 dark:hover:text-sky-400"
+              >
+                {copied ? (
+                  <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+              </button>
+            )}
             {/* Pinned cards are fixed: only Unpin. Private cards: pin + regen + delete. */}
             {pinned ? (
               onUnpin && (
@@ -241,8 +319,49 @@ export function ChartCard({
             {state.status === "ready" && !isEmpty &&
               renderChart(spec, state.series, chartRef, state.answer)}
           </div>
+
+          {/* spec-06 A) data-grounded narrative UNDER the chart — NL cards only.
+              While loading, a small shimmer stands in (data renders first). */}
+          {hasQuery && (
+            <SummaryBlock
+              loading={state.status === "loading"}
+              summary={state.status === "ready" ? state.summary : undefined}
+              empty={isEmpty}
+            />
+          )}
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * The narrative block beneath the chart. Shows a one-line shimmer while the card
+ * is loading (the summary co-arrives with the data from /api/chart), the prose
+ * once ready, and nothing if the chart is empty or no summary came back.
+ */
+function SummaryBlock({
+  loading,
+  summary,
+  empty,
+}: {
+  loading: boolean;
+  summary?: string;
+  empty: boolean;
+}) {
+  if (empty) return null;
+  if (loading) {
+    return (
+      <div className="mt-2 shrink-0 space-y-1" aria-hidden>
+        <div className="h-2.5 w-full animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/40" />
+        <div className="h-2.5 w-4/5 animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/40" />
+      </div>
+    );
+  }
+  if (!summary) return null;
+  return (
+    <p className="mt-2 shrink-0 border-t border-black/5 pt-2 text-xs leading-relaxed text-slate-600 dark:border-white/5 dark:text-slate-300">
+      {summary}
+    </p>
   );
 }

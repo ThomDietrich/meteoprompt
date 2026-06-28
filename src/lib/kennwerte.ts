@@ -47,3 +47,9 @@ export interface KennwertValue {
 export interface NowResponse {
   values: KennwertValue[];
 }
+
+/** Response shape for GET /api/overview (spec-06 E — Wetterlage-Überblick). */
+export interface OverviewResponse {
+  /** 1–3-sentence German overview, or omitted when unavailable. */
+  overview?: string;
+}

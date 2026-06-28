@@ -23,6 +23,14 @@ export interface ChartSpec {
   series: Series[]; // 1..N series in ONE chart
   binning?: Binning; // spec-04: for heatmap-style charts
   answer?: Answer; // spec-05: a prominent computed result alongside the chart
+  /**
+   * spec-06: a short (1–3 sentence, ≤200-word) German narrative generated
+   * server-side AFTER the data is resolved, from the computed stats — only for
+   * NL-queried cards (those with an originQuery), never for the permanent
+   * dashboard. Additive/forward-compatible. Regenerated on every reload, so
+   * persisting it is optional (the client re-fetches via /api/chart anyway).
+   */
+  summary?: string;
 }
 
 /**
@@ -62,9 +70,10 @@ export type ChartType =
   | "violin"
   | "barRange"
   | "themeRiver"
+  // v6: tabular rendering (TanStack Table)
+  | "table"
   // reserved (not yet rendered)
-  | "heatmap"
-  | "table";
+  | "heatmap";
 
 export type Binning = "calendar" | "hourOfDay×weekday";
 
@@ -87,6 +96,7 @@ export const IMPLEMENTED_CHART_TYPES = [
   "violin",
   "barRange",
   "themeRiver",
+  "table", // spec-06: rendered as a TanStack table (on explicit request / few values)
 ] as const;
 export type ImplementedChartType = (typeof IMPLEMENTED_CHART_TYPES)[number];
 
@@ -251,6 +261,7 @@ export interface ChartResult {
   spec: ChartSpec;
   series: ResolvedSeries[];
   answer?: ResolvedAnswer;
+  summary?: string; // spec-06: NL-card narrative (absent for permanent charts)
 }
 
 /** Response of POST /api/ask. */
@@ -264,6 +275,7 @@ export interface ChartResponse {
   spec: ChartSpec;
   series: ResolvedSeries[];
   answer?: ResolvedAnswer;
+  summary?: string; // spec-06: regenerated per reload for NL cards
 }
 
 /** Layout box for a card in the grid. */

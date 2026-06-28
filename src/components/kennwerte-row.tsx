@@ -16,11 +16,18 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { KENNWERTE, type KennwertValue, type NowResponse } from "@/lib/kennwerte";
+import {
+  KENNWERTE,
+  type KennwertValue,
+  type NowResponse,
+  type OverviewResponse,
+} from "@/lib/kennwerte";
 
 /**
  * Header Kennwert-Zeile: 12 live-value pills (icon + label + value/unit),
- * fetched from /api/now after mount. Wraps responsively. See spec-03 §4.
+ * fetched from /api/now after mount, plus a data-grounded Wetterlage-Überblick
+ * below them (fetched separately from /api/overview so the values appear
+ * instantly while the text loads). Wraps responsively. See spec-03 §4, spec-06 E.
  */
 
 const ICONS: Record<string, LucideIcon> = {
@@ -86,8 +93,28 @@ type State =
   | { status: "error"; message: string }
   | { status: "ready"; values: KennwertValue[] };
 
+/**
+ * The Wetterlage-Überblick state (spec-06 E). Independent of the values fetch so
+ * the values render immediately. "loading" shows a shimmer; "ready" without text
+ * (missing key / data / error) renders nothing — the overview is best-effort.
+ */
+type OverviewState =
+  | { status: "loading" }
+  | { status: "ready"; text: string | null };
+
+/** A one-line shimmer placeholder shown beneath the cells while the text loads. */
+function OverviewShimmer() {
+  return (
+    <div className="space-y-1.5" aria-hidden>
+      <div className="h-3 w-[92%] animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/40" />
+      <div className="h-3 w-[64%] animate-pulse rounded bg-slate-200/70 dark:bg-slate-700/40" />
+    </div>
+  );
+}
+
 export function KennwerteRow() {
   const [state, setState] = useState<State>({ status: "loading" });
+  const [overview, setOverview] = useState<OverviewState>({ status: "loading" });
 
   useEffect(() => {
     let cancelled = false;
@@ -116,6 +143,29 @@ export function KennwerteRow() {
       }
     }
     load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Overview: fetched separately so it never delays the values. Any failure
+  // (missing key, error, empty) just yields no text — the panel still shows
+  // the 12 values. Regenerated on every load (consistent with spec-06 A).
+  useEffect(() => {
+    let cancelled = false;
+    async function loadOverview() {
+      try {
+        const res = await fetch("/api/overview");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as OverviewResponse;
+        if (!cancelled) {
+          setOverview({ status: "ready", text: data.overview ?? null });
+        }
+      } catch {
+        if (!cancelled) setOverview({ status: "ready", text: null });
+      }
+    }
+    loadOverview();
     return () => {
       cancelled = true;
     };
@@ -150,6 +200,13 @@ export function KennwerteRow() {
     );
   }
 
+  // Wetterlage-Überblick: a "nachgelagertes Element" inside the SAME rounded
+  // panel, below the 12 cells (spec-06 E). Shimmer while loading; nothing if the
+  // overview is unavailable — the values above always stand on their own.
+  const showOverview =
+    overview.status === "loading" ||
+    (overview.status === "ready" && overview.text != null);
+
   return (
     <div className={panelClass}>
       <div className={gridClass}>
@@ -157,6 +214,17 @@ export function KennwerteRow() {
           <Cell key={kv.key} kv={kv} />
         ))}
       </div>
+      {showOverview && (
+        <div className="border-t border-black/5 px-3.5 py-3 dark:border-white/5">
+          {overview.status === "loading" ? (
+            <OverviewShimmer />
+          ) : (
+            <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+              {overview.text}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

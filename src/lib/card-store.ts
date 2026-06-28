@@ -8,6 +8,12 @@ import type { ChartSpec } from "@/lib/query-spec";
  * We persist ONLY specs + layout, never data. On load the grid re-runs
  * POST /api/chart per card to fetch fresh data (relative time ranges roll
  * forward). See spec-02 §8. All reads happen client-side after mount.
+ *
+ * spec-06: the per-card narrative (ChartSpec.summary) is NOT persisted here —
+ * it is regenerated server-side on every reload from the fresh data (so it
+ * stays current). The field is additive on ChartSpec, so any spec that happens
+ * to carry it round-trips harmlessly; the grid simply ignores the stale value
+ * and the /api/chart response supplies the current text.
  */
 
 const STORAGE_KEY = "meteoprompt:cards:v1";

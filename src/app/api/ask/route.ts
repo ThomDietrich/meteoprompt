@@ -4,6 +4,7 @@ import { deriveQuerySpec, UnmappableQueryError } from "@/lib/claude";
 import { ChartShapeError, resolveChart } from "@/lib/flux";
 import { categorizeDataError } from "@/lib/query-error";
 import { logFailedQuery } from "@/lib/query-log";
+import { generateSummary } from "@/lib/summary";
 import type { AskResponse, ChartResult } from "@/lib/query-spec";
 
 // Never run at build time — Claude + InfluxDB are called per request at runtime,
@@ -70,7 +71,15 @@ export async function POST(request: Request) {
     const results: ChartResult[] = await Promise.all(
       charts.map(async (spec) => {
         const { series, answer } = await resolveChart(spec);
-        return { spec, series, ...(answer ? { answer } : {}) };
+        // spec-06 A) data-grounded narrative for this NL card (best-effort:
+        // generateSummary never throws → data still returns if the LLM hiccups).
+        const summary = await generateSummary(spec, series, q, answer);
+        return {
+          spec,
+          series,
+          ...(answer ? { answer } : {}),
+          ...(summary ? { summary } : {}),
+        };
       }),
     );
 

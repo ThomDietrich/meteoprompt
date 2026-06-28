@@ -105,7 +105,7 @@ const QUERY_SPEC_TOOL: Anthropic.Tool = {
               type: "string",
               enum: [...IMPLEMENTED_CHART_TYPES],
               description:
-                "Chart type — pick a well-FITTING one weighted-randomly (see the chart catalog + rules in the system prompt). Don't always default to line.",
+                "Chart type — pick a well-FITTING one weighted-randomly (see the chart catalog + rules in the system prompt). Don't always default to line. NEVER pick 'table' via smart-variety: use 'table' ONLY when the user explicitly asks for a table/list/export, or when only a few discrete values are compared.",
             },
             binning: {
               type: "string",
@@ -280,6 +280,11 @@ SMART-VARIETY (Diagrammwahl):
 - heatmapHourDay/heatmapCalendar/boxplot/violin brauchen einen längeren Zeitraum (z. B. -30d/-365d).
 - ⚑ Akkumulator-Metriken (rainfall, evapotranspiration): aggregation 'sum' (Backend: difference+sum).
 - Gleiche Einheit + Vergleich → EINE Card mit mehreren series; verschiedene Themen → mehrere charts.
+- TABELLE (chart "table"): NUR wählen, wenn der Nutzer AUSDRÜCKLICH danach fragt ("als Tabelle",
+  "tabellarisch", "liste", "auflisten", "exportieren") ODER nur WENIGE diskrete Werte verglichen
+  werden (z. B. "Ø-Temperatur der letzten 3 Tage" → eine Serie, window "1d"; "Monatsmittel je Monat"
+  → window "1mo"). Sonst IMMER ein Diagramm bevorzugen — niemals zufällig "table" über Smart-Variety.
+  Setze für wenige Werte ein passendes window (z. B. "1d"/"1mo"), damit die Tabelle wenige Zeilen hat.
 ${nudge}
 ZEITRÄUME: relative Flux-Dauern wie -7d, -28d, -1d, -3d; stop üblicherweise 'now'. Absolute ISO-Zeiten
 für konkrete Monate/Jahre (z. B. Juni 2025: start "2025-06-01T00:00:00Z", stop "2025-07-01T00:00:00Z").
