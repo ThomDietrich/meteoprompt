@@ -1,6 +1,6 @@
 # Iteration 4 — spec-06: Begleittexte, Tabellen-Cards, Prompt-Kopieren
 
-> **Status:** 🟢 aktiv — 2026-06-28.
+> **Status:** ✅ abgeschlossen `5b00008` — 2026-06-28.
 > Erbt alles aus Iteration 1–3 (NL → Charts, 14 Chart-Typen, Intelligenz-Antworten,
 > Pinnen, Stations-Dashboard, Branding). Single Source of Truth für diese Iteration.
 
@@ -16,6 +16,9 @@ Drei Features:
   sauber umsetzen; genutzt **nur auf Nachfrage** oder bei sehr wenigen Vergleichswerten.
 - **C) „Kopieren"-Button** — kopiert den Original-Prompt einer Card in die Zwischenablage
   (leichtes Re-Prompt statt In-Card-Editing).
+- **D) CSV-Export** — kleine Schaltfläche auf allen Cards.
+- **E) Wetterlage-Überblick** — ein Zusammenfassungstext in der obersten Kennwerte-Zeile
+  (allgemeine Lage + Besonderheiten der letzten 2–5 Tage).
 
 ---
 
@@ -120,6 +123,34 @@ Modell: **claude-sonnet-4-6** (Qualität, konsistent mit `/api/ask`). *Offen:* g
 
 ---
 
+## E) Wetterlage-Überblick (Kennwerte-Zeile)
+
+Analog zu A), aber für die oberste **Kennwerte-Zeile**: ein **nachgelagertes Textelement
+innerhalb des Instrumententafel-Kastens** (unter den 12 aktuellen Werten).
+
+### Inhalt
+- Eine **allgemeine Beschreibung der aktuellen Wetterlage** + **Hervorhebung von
+  Besonderheiten der letzten 2–5 Tage** (z. B. ein extremer Regentag, eine Hitze-/Kälte-/
+  milde Phase, ein Sturmtag). Beispiel: „Gestern hat es extrem stark geregnet, ansonsten
+  milde Temperaturen. Wir befinden uns aktuell in einer sehr heißen Sommerphase."
+- 1–3 Sätze, ≤200 Wörter, **sachlich, allgemeinverständlich, datenbasiert** — **gleiches
+  Regelwerk wie A)** (kein Erfinden, keine Vorhersage, keine Ratschläge).
+
+### Daten (kein Halluzinieren)
+Serverseitig über die **letzten ~5 Tage** berechnet, je Tag: Temperatur (Min/Max/Mittel),
+Regenmenge (korrekt: `dayrain`-Akkumulator/dedup), ggf. Windböe-Max & Sonne; plus die
+aktuellen Werte. Daraus Merkmale ableiten (heißer/kalter/milder Tag, starker Regentag,
+Trend/Phase) und Claude (**sonnet**) übergeben.
+
+### Endpoint & UI
+- Neuer **`GET /api/overview`** — berechnet die 5-Tage-Kennzahlen + ruft Claude.
+- `KennwerteRow` lädt die **Werte** wie bisher (`/api/now`, sofort) und den **Überblick
+  separat/asynchron** (Shimmer unter den Werten), damit die Werte instant erscheinen.
+- **Bei jedem Laden neu** erzeugt (konsistent mit A). Bei fehlendem Key/Fehler: Werte bleiben,
+  Überblick entfällt still.
+
+---
+
 ## Verifikations-Gate
 
 **Gate A** (secret-frei, Erfolgsbedingung):
@@ -141,7 +172,10 @@ Beide Exit 0.
   korrekte Daten.
 - **Kopieren:** Klick legt den Original-Prompt in die Zwischenablage (per Clipboard/Paste
   verifiziert).
-- **Keine Regression** in Iteration 1–3.
+- **Wetterlage-Überblick:** unter den Kennwerten erscheint ein 1–3-Satz-Text, der die
+  aktuelle Lage + eine Besonderheit der letzten Tage datenkorrekt beschreibt; Werte
+  erscheinen sofort, der Text asynchron; bei Reload neu.
+- **Keine Regression** in Iteration 1–5.
 
 ---
 
