@@ -987,6 +987,7 @@ export async function resolveAnswer(
   |> range(start: ${start}, stop: ${stop})
   |> filter(fn: (r) => r["entity_id"] == "${cat.entityId}")
   |> filter(fn: (r) => r["_field"] == "value")
+  |> group(columns: ["entity_id"])
   |> difference(nonNegative: true)
   |> sum()
   |> keep(columns: ["_value"])`;
@@ -1086,6 +1087,7 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
   |> range(start: today())
   |> filter(fn: (r) => r["entity_id"] == "${rainCat.entityId}")
   |> filter(fn: (r) => r["_field"] == "value")
+  |> group(columns: ["entity_id"])
   |> max()
   |> keep(columns: ["_time", "_value"])`;
     const rainPoints = await runFluxPoints(rainFlux);
