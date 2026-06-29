@@ -1047,9 +1047,24 @@ export async function resolveAnswer(
 // ── Kennwerte (live values for the header row, spec-03 §4) ──────────────────
 
 /**
+ * DE-format a Kennwert secondary value WITHOUT a unit (the unit is already on the
+ * main value). Degrees / W/m² / UV ("–") read as integers; everything else gets
+ * one decimal — same precision rule the row's `formatValue` uses (spec-09 A).
+ */
+function formatSecondaryNumber(v: number, unit: string): string {
+  const decimals = unit === "°" || unit === "W/m²" || unit === "–" ? 0 : 1;
+  return v.toLocaleString("de-DE", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
+/**
  * Resolve the 12 Kennwerte: one `last()`-per-entity query for the "latest"
- * metrics (whitelist of catalog entityIds), plus a daily-max query for
- * "Regen heute" (today's accumulator). Returns one value per KENNWERTE entry.
+ * metrics (whitelist of catalog entityIds), a daily-max query for "Regen heute"
+ * (today's accumulator), plus two today-scoped min()/max() queries that feed the
+ * muted "secondary" line (today low/high or peak — spec-09 A). All run in ONE
+ * `Promise.all` batch so /api/now stays fast. Returns one value per KENNWERTE.
  */
 export async function resolveKennwerte(): Promise<KennwertValue[]> {
   const bucket = influxBucket();
@@ -1072,29 +1087,82 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
   |> last()
   |> keep(columns: ["entity_id", "_time", "_value"])`;
 
-  const latestRows = await runFluxEntityRows(latestFlux);
-  const latestByEntity = new Map(latestRows.map((r) => [r.entityId, r]));
-
   // "Regen heute" = today's daily-max of the rain accumulator (dayrain_mm).
-  let rainTodayValue: number | null = null;
-  let rainTodayTime: string | null = null;
+  // TZ preamble makes today() = Europe/Berlin midnight (not UTC midnight), so
+  // "Regen heute" (and the secondary min/max below) cover the correct local day.
   const rainDef = KENNWERTE.find((k) => k.aggregation === "rainToday");
   const rainCat = rainDef ? getByKey(rainDef.key) : undefined;
-  if (rainCat) {
-    // TZ preamble makes today() = Europe/Berlin midnight (not UTC midnight),
-    // so "Regen heute" covers the correct local calendar day.
-    const rainFlux = `${TZ_PREAMBLE}from(bucket: "${bucket}")
+  const rainFlux = rainCat
+    ? `${TZ_PREAMBLE}from(bucket: "${bucket}")
   |> range(start: today())
   |> filter(fn: (r) => r["entity_id"] == "${rainCat.entityId}")
   |> filter(fn: (r) => r["_field"] == "value")
   |> group(columns: ["entity_id"])
   |> max()
-  |> keep(columns: ["_time", "_value"])`;
-    const rainPoints = await runFluxPoints(rainFlux);
-    if (rainPoints.length > 0) {
-      rainTodayValue = rainPoints[0].v;
-      rainTodayTime = rainPoints[0].t;
+  |> keep(columns: ["_time", "_value"])`
+    : null;
+
+  // Secondary set: entityIds of the Kennwerte that carry a `secondary` field.
+  // Two today-scoped queries (min, max) over that whitelist. group BEFORE the
+  // aggregation (per entity_id) to bridge the storage-shard boundary — same as
+  // rainToday; otherwise a metric split across shards yields one row per shard.
+  const secondaryDefs = KENNWERTE.filter((k) => k.secondary);
+  const secEntityToDef = new Map<string, (typeof KENNWERTE)[number]>();
+  for (const def of secondaryDefs) {
+    const cat = getByKey(def.key);
+    if (cat) secEntityToDef.set(cat.entityId, def);
+  }
+  const secEntityIds = [...secEntityToDef.keys()];
+  const secRegex = secEntityIds.map((e) => `^${e}$`).join("|");
+  const secBase = `${TZ_PREAMBLE}from(bucket: "${bucket}")
+  |> range(start: today())
+  |> filter(fn: (r) => r["_field"] == "value")
+  |> filter(fn: (r) => r["entity_id"] =~ /${secRegex}/)
+  |> group(columns: ["entity_id"])`;
+  // min()/max() over a single grouped table keep _time → runFluxEntityRows reads
+  // (entity_id, _time, _value) fine; we only use entity_id + _value.
+  const secMinFlux = secEntityIds.length
+    ? `${secBase}
+  |> min()
+  |> keep(columns: ["entity_id", "_time", "_value"])`
+    : null;
+  const secMaxFlux = secEntityIds.length
+    ? `${secBase}
+  |> max()
+  |> keep(columns: ["entity_id", "_time", "_value"])`
+    : null;
+
+  // ONE batch so /api/now is a single round of parallel queries.
+  const [latestRows, rainPoints, secMinRows, secMaxRows] = await Promise.all([
+    runFluxEntityRows(latestFlux),
+    rainFlux ? runFluxPoints(rainFlux) : Promise.resolve([]),
+    secMinFlux ? runFluxEntityRows(secMinFlux) : Promise.resolve([]),
+    secMaxFlux ? runFluxEntityRows(secMaxFlux) : Promise.resolve([]),
+  ]);
+
+  const latestByEntity = new Map(latestRows.map((r) => [r.entityId, r]));
+  const secMinByEntity = new Map(secMinRows.map((r) => [r.entityId, r.v]));
+  const secMaxByEntity = new Map(secMaxRows.map((r) => [r.entityId, r.v]));
+
+  const rainTodayValue = rainPoints.length > 0 ? rainPoints[0].v : null;
+  const rainTodayTime = rainPoints.length > 0 ? rainPoints[0].t : null;
+
+  // Build the muted secondary string for a def (today low/high or peak), or
+  // undefined when the needed value(s) are missing — the main value still shows.
+  function buildSecondary(
+    def: (typeof KENNWERTE)[number],
+    entityId: string,
+    unit: string,
+  ): string | undefined {
+    if (!def.secondary) return undefined;
+    const max = secMaxByEntity.get(entityId);
+    if (def.secondary === "todayMax") {
+      return max == null ? undefined : `↑ ${formatSecondaryNumber(max, unit)}`;
     }
+    // todayMinMax
+    const min = secMinByEntity.get(entityId);
+    if (min == null || max == null) return undefined;
+    return `↓ ${formatSecondaryNumber(min, unit)} ↑ ${formatSecondaryNumber(max, unit)}`;
   }
 
   // Assemble in KENNWERTE order.
@@ -1114,6 +1182,7 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
 
     const row = cat ? latestByEntity.get(cat.entityId) : undefined;
     const value = row?.v ?? null;
+    const secondary = cat ? buildSecondary(def, cat.entityId, unit) : undefined;
     return {
       key: def.key,
       label: def.label,
@@ -1123,6 +1192,7 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
       ...(def.compass && value != null
         ? { compass: degreesToCompass(value) }
         : {}),
+      ...(secondary ? { secondary } : {}),
     };
   });
 }

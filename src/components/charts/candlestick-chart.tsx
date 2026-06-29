@@ -5,7 +5,7 @@ import ReactECharts from "echarts-for-react";
 import type { EChartsOption } from "echarts";
 import type EChartsReact from "echarts-for-react";
 
-import { ECHARTS_OPTS, ECHARTS_STYLE, seriesColor } from "@/components/charts/chart-base";
+import { candlestickTooltip, ECHARTS_OPTS, ECHARTS_STYLE, seriesColor } from "@/components/charts/chart-base";
 import type { ResolvedSeries } from "@/lib/query-spec";
 
 /**
@@ -21,10 +21,7 @@ function buildOption(series: ResolvedSeries[]): EChartsOption {
 
   return {
     grid: { top: 16, right: 16, bottom: 32, left: 48 },
-    tooltip: {
-      trigger: "axis",
-      axisPointer: { type: "cross" },
-    },
+    tooltip: candlestickTooltip(unit),
     xAxis: {
       type: "category",
       data: ohlc.map((d) => d.t.slice(0, 10)),

@@ -3,11 +3,11 @@
 import { forwardRef } from "react";
 import * as echarts from "echarts";
 import ReactECharts from "echarts-for-react";
-import type { EChartsOption } from "echarts";
+import type { EChartsOption, TooltipComponentFormatterCallbackParams } from "echarts";
 import type EChartsReact from "echarts-for-react";
 import lineRangeInstaller from "@echarts-x/custom-line-range";
 
-import { ECHARTS_OPTS, ECHARTS_STYLE, seriesColor } from "@/components/charts/chart-base";
+import { deDateTime, deNum, ECHARTS_OPTS, ECHARTS_STYLE, seriesColor } from "@/components/charts/chart-base";
 import type { ResolvedSeries } from "@/lib/query-spec";
 
 /**
@@ -28,11 +28,34 @@ function buildOption(series: ResolvedSeries[]): EChartsOption {
 
   return {
     grid: { top: 20, right: 16, bottom: 32, left: 48 },
-    tooltip: { trigger: "axis" },
+    // Time-axis tooltip (spec-09 B): a BOLD DE date+time header (from the full
+    // ISO category value) + the low/high band values. The category axis keeps
+    // full ISO so the header resolves; axisLabel shortens it for the axis itself.
+    tooltip: {
+      trigger: "axis" as const,
+      axisPointer: { type: "line" as const },
+      formatter: (params: TooltipComponentFormatterCallbackParams) => {
+        const list = Array.isArray(params) ? params : [params];
+        const head = list[0] as { axisValue?: string; data?: number[]; marker?: string } | undefined;
+        if (!head) return "";
+        const header = head.axisValue ? `<strong>${deDateTime(head.axisValue)}</strong>` : "";
+        // Custom lineRange datum: [index, low, high].
+        const d = Array.isArray(head.data) ? head.data : [];
+        const low = typeof d[1] === "number" ? `${deNum(d[1])} ${unit}` : "–";
+        const high = typeof d[2] === "number" ? `${deNum(d[2])} ${unit}` : "–";
+        return [header, `${head.marker ?? ""} Tief: ${low}`, `Hoch: ${high}`]
+          .filter(Boolean)
+          .join("<br/>");
+      },
+    },
     xAxis: {
       type: "category",
-      data: band.map((d) => d.t.slice(5, 16).replace("T", " ")),
-      axisLabel: { fontSize: 9, interval: Math.ceil(band.length / 8) },
+      data: band.map((d) => d.t),
+      axisLabel: {
+        fontSize: 9,
+        interval: Math.ceil(band.length / 8),
+        formatter: (v: string) => v.slice(5, 16).replace("T", " "),
+      },
     },
     yAxis: {
       type: "value",

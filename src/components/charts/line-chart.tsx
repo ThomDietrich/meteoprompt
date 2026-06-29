@@ -5,7 +5,7 @@ import ReactECharts from "echarts-for-react";
 import type { EChartsOption } from "echarts";
 import type EChartsReact from "echarts-for-react";
 
-import { deNum, ECHARTS_OPTS, ECHARTS_STYLE, seriesColor } from "@/components/charts/chart-base";
+import { deNum, ECHARTS_OPTS, ECHARTS_STYLE, seriesColor, timeAxisTooltip } from "@/components/charts/chart-base";
 import { WAPPEN_PALETTE } from "@/lib/colors";
 import type { ResolvedSeries } from "@/lib/query-spec";
 
@@ -37,11 +37,7 @@ function buildOption(
     legend: !single
       ? { top: 0, type: "scroll", textStyle: { fontSize: 11 } }
       : undefined,
-    tooltip: {
-      trigger: "axis",
-      valueFormatter: (value) =>
-        typeof value === "number" ? `${deNum(value)} ${unit}` : String(value),
-    },
+    tooltip: timeAxisTooltip(unit),
     xAxis: { type: "time" },
     yAxis: {
       type: "value",

@@ -8,6 +8,8 @@ import {
   type KeyboardEvent,
 } from "react";
 
+import { pickExamples } from "@/lib/examples";
+
 /**
  * Free-text search box. Two visual modes:
  * - `variant="hero"` — large, centered (empty state, Google-style).
@@ -31,6 +33,46 @@ function useAutoGrow(value: string, maxPx: number) {
   return ref;
 }
 
+/**
+ * A wrapping row of clickable demo example pills (spec-09 C). Clicking one fills
+ * the search box (handled by the parent) — no auto-submit. Disabled while a query
+ * is pending so a click can't queue work behind it.
+ */
+function ExamplePills({
+  examples,
+  onPick,
+  pending,
+  align,
+}: {
+  examples: string[];
+  onPick: (example: string) => void;
+  pending: boolean;
+  align: "center" | "start";
+}) {
+  return (
+    <div
+      className={`flex flex-wrap gap-2 ${
+        align === "center" ? "justify-center" : "justify-start"
+      }`}
+    >
+      <span className="self-center text-xs text-brand-ink/45 dark:text-slate-500">
+        Beispiele:
+      </span>
+      {examples.map((ex) => (
+        <button
+          key={ex}
+          type="button"
+          onClick={() => onPick(ex)}
+          disabled={pending}
+          className="rounded-full bg-brand-blue/10 px-3 py-1 text-xs text-brand-blue transition-colors hover:bg-brand-blue/20 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-sky-400/10 dark:text-sky-300 dark:hover:bg-sky-400/20"
+        >
+          {ex}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function SearchBox({
   variant,
   onSubmit,
@@ -45,11 +87,19 @@ export function SearchBox({
   const [value, setValue] = useState("");
   const isHero = variant === "hero";
   const textareaRef = useAutoGrow(value, isHero ? 200 : 140);
+  // 3 demo examples, chosen once per mount → stable per load, varies on reload.
+  const [examples] = useState(() => pickExamples(3));
 
   function submit() {
     const q = value.trim();
     if (!q || pending) return;
     onSubmit(q);
+  }
+
+  // Click an example pill → fill the textarea (no auto-submit) and focus it.
+  function fillExample(example: string) {
+    setValue(example);
+    textareaRef.current?.focus();
   }
 
   function handleSubmit(e: FormEvent) {
@@ -74,12 +124,17 @@ export function SearchBox({
   if (isHero) {
     return (
       <div className="flex min-h-[34vh] flex-col items-center justify-center px-4">
-        <h2 className="mb-2 text-center text-2xl font-semibold tracking-tight text-brand-ink dark:text-slate-100 sm:text-3xl">
+        <h2 className="mb-5 text-center text-2xl font-semibold tracking-tight text-brand-ink dark:text-slate-100 sm:text-3xl">
           Was möchtest du über das Wetter wissen?
         </h2>
-        <p className="mb-7 text-center text-sm text-brand-ink/55 dark:text-slate-400">
-          z. B. „Außentemperatur der letzten 4 Wochen“ oder „Wie viel hat es diese Woche geregnet?“
-        </p>
+        <div className="mb-5 w-full max-w-2xl">
+          <ExamplePills
+            examples={examples}
+            onPick={fillExample}
+            pending={pending}
+            align="center"
+          />
+        </div>
         <form onSubmit={handleSubmit} className="w-full max-w-2xl">
           <div className="flex items-end gap-2.5">
             <textarea
@@ -115,6 +170,14 @@ export function SearchBox({
   return (
     <div className="sticky top-0 z-10 -mx-4 mb-4 border-b border-brand-blue/10 bg-white/85 px-4 py-3.5 backdrop-blur dark:border-white/10 dark:bg-slate-950/70 sm:-mx-6 sm:px-6">
       <form onSubmit={handleSubmit} className="mx-auto max-w-3xl">
+        <div className="mb-2.5">
+          <ExamplePills
+            examples={examples}
+            onPick={fillExample}
+            pending={pending}
+            align="start"
+          />
+        </div>
         <div className="flex items-end gap-2.5">
           <textarea
             ref={textareaRef}

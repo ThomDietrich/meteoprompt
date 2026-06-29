@@ -9,6 +9,14 @@
 
 export type KennwertAggregation = "latest" | "rainToday";
 
+/**
+ * Today's secondary context shown under a Kennwert (spec-09 A): either today's
+ * low/high (`todayMinMax`) or just today's peak (`todayMax`), for the local
+ * calendar day (Europe/Berlin). Server-resolved and pre-formatted into the
+ * `secondary` string; absent on cells without a secondary.
+ */
+export type KennwertSecondary = "todayMinMax" | "todayMax";
+
 export interface KennwertDef {
   key: string; // catalog key
   label: string; // short German label
@@ -16,21 +24,23 @@ export interface KennwertDef {
   aggregation: KennwertAggregation;
   /** wind_direction also gets a compass abbreviation appended to the value. */
   compass?: boolean;
+  /** Today's low/high (or just peak) shown as a muted second line (spec-09 A). */
+  secondary?: KennwertSecondary;
 }
 
 export const KENNWERTE: KennwertDef[] = [
-  { key: "outdoor_temperature", label: "Außentemperatur", icon: "Thermometer", aggregation: "latest" },
+  { key: "outdoor_temperature", label: "Außentemperatur", icon: "Thermometer", aggregation: "latest", secondary: "todayMinMax" },
   { key: "apparent_temperature", label: "Gefühlt", icon: "ThermometerSun", aggregation: "latest" },
   { key: "dew_point", label: "Taupunkt", icon: "Droplets", aggregation: "latest" },
-  { key: "outdoor_humidity", label: "Luftfeuchte", icon: "Droplet", aggregation: "latest" },
+  { key: "outdoor_humidity", label: "Luftfeuchte", icon: "Droplet", aggregation: "latest", secondary: "todayMinMax" },
   { key: "wind_speed", label: "Wind", icon: "Wind", aggregation: "latest" },
-  { key: "wind_gust", label: "Böen", icon: "Gauge", aggregation: "latest" },
+  { key: "wind_gust", label: "Böen", icon: "Gauge", aggregation: "latest", secondary: "todayMax" },
   { key: "wind_direction", label: "Windrichtung", icon: "Compass", aggregation: "latest", compass: true },
   { key: "rainfall", label: "Regen heute", icon: "CloudRain", aggregation: "rainToday" },
   { key: "rain_rate", label: "Regenrate", icon: "CloudDrizzle", aggregation: "latest" },
-  { key: "pressure", label: "Luftdruck", icon: "Gauge", aggregation: "latest" },
-  { key: "solar_radiation", label: "Sonne", icon: "Sun", aggregation: "latest" },
-  { key: "uv_index", label: "UV", icon: "SunMedium", aggregation: "latest" },
+  { key: "pressure", label: "Luftdruck", icon: "Gauge", aggregation: "latest", secondary: "todayMinMax" },
+  { key: "solar_radiation", label: "Sonne", icon: "Sun", aggregation: "latest", secondary: "todayMax" },
+  { key: "uv_index", label: "UV", icon: "SunMedium", aggregation: "latest", secondary: "todayMax" },
 ];
 
 /** One resolved live value (server → client). */
@@ -41,6 +51,8 @@ export interface KennwertValue {
   value: number | null;
   /** Compass abbreviation for wind_direction; otherwise undefined. */
   compass?: string;
+  /** Pre-formatted today low/high (or peak), e.g. "↓ 12 ↑ 24"; absent when N/A. */
+  secondary?: string;
   t: string | null; // ISO timestamp of the reading
 }
 

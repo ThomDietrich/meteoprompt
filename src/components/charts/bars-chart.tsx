@@ -5,7 +5,7 @@ import ReactECharts from "echarts-for-react";
 import type { EChartsOption } from "echarts";
 import type EChartsReact from "echarts-for-react";
 
-import { seriesColor } from "@/components/charts/chart-base";
+import { seriesColor, timeAxisTooltip } from "@/components/charts/chart-base";
 import type { ResolvedSeries } from "@/lib/query-spec";
 
 /**
@@ -22,12 +22,7 @@ function buildOption(series: ResolvedSeries[]): EChartsOption {
       series.length > 1
         ? { top: 0, type: "scroll", textStyle: { fontSize: 11 } }
         : undefined,
-    tooltip: {
-      trigger: "axis",
-      axisPointer: { type: "shadow" },
-      valueFormatter: (value) =>
-        typeof value === "number" ? `${value.toFixed(1)} ${unit}` : String(value),
-    },
+    tooltip: timeAxisTooltip(unit),
     xAxis: { type: "time" },
     yAxis: {
       type: "value",
