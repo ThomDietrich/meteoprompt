@@ -1,22 +1,25 @@
 "use client";
 
+import { useCallback, useRef } from "react";
 import {
   ResponsiveGridLayout,
   type Breakpoints,
+  type Layout,
   type LayoutItem,
   type ResponsiveLayouts,
 } from "react-grid-layout";
 
 import { ChartCard } from "@/components/cards/chart-card";
 import { SectionDivider } from "@/components/section-divider";
-import type { PinnedCard } from "@/lib/query-spec";
+import type { CardBox, PinnedCard } from "@/lib/query-spec";
 
 /**
  * The GLOBAL pinned-cards section (spec-05 §7, section 4). A separate grid below
- * the private cards, above the permanent dashboard. Pinned cards are fixed:
- * only Unpin (no delete/regenerate). Local moves are view-only — not persisted
- * back to the global layout (kept simple here: the grid is non-draggable so the
- * global layout from data/pinned.json is shown consistently to everyone).
+ * the private cards, above the permanent dashboard. Pinned cards keep only Unpin
+ * (no delete/regenerate), but — spec-08 — are now **draggable + resizable**, and
+ * the arrangement is persisted GLOBALLY (server-side `data/pinned.json`) via the
+ * `onLayoutChange` callback. Only `lg`-breakpoint edits persist (narrower
+ * breakpoints auto-stack and would clobber the canonical wide layout).
  *
  * Renders nothing when there are no pins (no empty section / divider).
  */
@@ -24,19 +27,41 @@ import type { PinnedCard } from "@/lib/query-spec";
 const COLS: Breakpoints = { lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 };
 const BREAKPOINTS: Breakpoints = { lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 };
 const ROW_HEIGHT = 48;
-const DEFAULT_SIZE = { w: 6, h: 8, minW: 3, minH: 4 };
+const MIN = { minW: 3, minH: 4 };
 
 export function PinnedGrid({
   cards,
   width,
   ready,
   onUnpin,
+  onLayoutChange,
 }: {
   cards: PinnedCard[];
   width: number;
   ready: boolean;
   onUnpin: (id: string) => void;
+  /** Persist a drag/resize edit (spec-08): the new box per card. */
+  onLayoutChange: (updates: { id: string; layout: CardBox }[]) => void;
 }) {
+  // Only persist edits made on the canonical wide (`lg`) breakpoint.
+  const breakpointRef = useRef<string>("lg");
+  const handleBreakpointChange = useCallback((bp: string) => {
+    breakpointRef.current = bp;
+  }, []);
+
+  const handleLayoutChange = useCallback(
+    (current: Layout) => {
+      if (breakpointRef.current !== "lg") return;
+      onLayoutChange(
+        current.map((l) => ({
+          id: l.i,
+          layout: { x: l.x, y: l.y, w: l.w, h: l.h },
+        })),
+      );
+    },
+    [onLayoutChange],
+  );
+
   if (cards.length === 0) return null;
 
   const layoutItems: LayoutItem[] = cards.map((c) => ({
@@ -45,9 +70,8 @@ export function PinnedGrid({
     y: c.layout.y,
     w: c.layout.w,
     h: c.layout.h,
-    minW: DEFAULT_SIZE.minW,
-    minH: DEFAULT_SIZE.minH,
-    static: true, // global layout is fixed/consistent for all visitors
+    minW: MIN.minW,
+    minH: MIN.minH,
   }));
   const layouts: ResponsiveLayouts = {
     lg: layoutItems,
@@ -70,6 +94,10 @@ export function PinnedGrid({
           rowHeight={ROW_HEIGHT}
           margin={[16, 16]}
           containerPadding={[0, 0]}
+          dragConfig={{ handle: ".card-drag-handle" }}
+          resizeConfig={{ handles: ["se", "sw", "e", "s"] }}
+          onBreakpointChange={handleBreakpointChange}
+          onLayoutChange={handleLayoutChange}
         >
           {cards.map((card) => (
             <div key={card.id} className="flex">

@@ -20,7 +20,7 @@ import {
   type StoredCard,
 } from "@/lib/card-store";
 import { assignSeriesColors } from "@/lib/colors";
-import type { AskResponse, ChartSpec, PinnedCard } from "@/lib/query-spec";
+import type { AskResponse, CardBox, ChartSpec, PinnedCard } from "@/lib/query-spec";
 
 /** A transient skeleton placeholder shown while /api/ask is in flight. */
 interface PendingCard {
@@ -266,6 +266,44 @@ export default function DashboardGrid() {
     [pinnedCards, refreshPinned, persist, beginMutation],
   );
 
+  // Persist a drag/resize edit of the GLOBAL pinned arrangement (spec-08). Diff
+  // against the current pins; on a real change, update locally AND PUT the new
+  // layouts to the server (best-effort — the edit is already reflected locally).
+  const handlePinnedLayoutChange = useCallback(
+    (updates: { id: string; layout: CardBox }[]) => {
+      setPinnedCards((prev) => {
+        const byId = new Map(updates.map((u) => [u.id, u.layout]));
+        let changed = false;
+        const next = prev.map((c) => {
+          const l = byId.get(c.id);
+          if (
+            !l ||
+            (l.x === c.layout.x &&
+              l.y === c.layout.y &&
+              l.w === c.layout.w &&
+              l.h === c.layout.h)
+          ) {
+            return c;
+          }
+          changed = true;
+          return { ...c, layout: { x: l.x, y: l.y, w: l.w, h: l.h } };
+        });
+        if (!changed) return prev;
+        void fetch("/api/pinned", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            layouts: next.map((c) => ({ id: c.id, layout: c.layout })),
+          }),
+        }).catch(() => {
+          /* best-effort: the rearrangement still shows locally this session */
+        });
+        return next;
+      });
+    },
+    [],
+  );
+
   // Submit free text → show a skeleton immediately → /api/ask → replace the
   // skeleton with the returned card(s), or remove it and surface the error.
   const handleSubmit = useCallback(
@@ -476,6 +514,7 @@ export default function DashboardGrid() {
           width={width}
           ready={ready}
           onUnpin={handleUnpin}
+          onLayoutChange={handlePinnedLayoutChange}
         />
       </div>
     );
@@ -562,6 +601,7 @@ export default function DashboardGrid() {
         width={width}
         ready={ready}
         onUnpin={handleUnpin}
+        onLayoutChange={handlePinnedLayoutChange}
       />
     </div>
   );
