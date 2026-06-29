@@ -170,6 +170,22 @@ export default function DashboardGrid() {
     }, 80);
   }, []);
 
+  // The same guard, dedicated to the GLOBAL pinned grid (spec-11): pin/unpin/
+  // refresh + the initial mount all setPinnedCards programmatically, and RGL
+  // answers with an onLayoutChange we must NOT persist — doing so clobbers the
+  // stored size/arrangement and scrambles the order. Only a real user drag/resize
+  // happens with this flag false. ~150 ms covers the async refresh re-render.
+  const pinnedMutatingRef = useRef(false);
+  const pinnedMutationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const beginPinnedMutation = useCallback(() => {
+    pinnedMutatingRef.current = true;
+    if (pinnedMutationTimer.current) clearTimeout(pinnedMutationTimer.current);
+    pinnedMutationTimer.current = setTimeout(() => {
+      pinnedMutatingRef.current = false;
+      pinnedMutationTimer.current = null;
+    }, 150);
+  }, []);
+
   // Rehydrate PRIVATE cards from localStorage after mount (client-only).
   useEffect(() => {
     setCards(loadCards());
@@ -181,11 +197,13 @@ export default function DashboardGrid() {
       const res = await fetch("/api/pinned");
       if (!res.ok) return;
       const data = (await res.json()) as { cards?: PinnedCard[] };
+      // Suppress the onLayoutChange this setState will provoke (programmatic).
+      beginPinnedMutation();
       setPinnedCards(Array.isArray(data.cards) ? data.cards : []);
     } catch {
       // Network/store error → leave pins empty; non-fatal.
     }
-  }, []);
+  }, [beginPinnedMutation]);
 
   useEffect(() => {
     refreshPinned();
@@ -201,6 +219,14 @@ export default function DashboardGrid() {
     async (id: string) => {
       const card = cards.find((c) => c.id === id);
       if (!card) return;
+      // Append the new pin in a free row BELOW the existing pins. With
+      // compactType=null the pinned grid won't auto-place it, so an explicit
+      // collision-free slot keeps the arrangement stable (spec-11).
+      const nextY = pinnedCards.reduce(
+        (m, c) => Math.max(m, c.layout.y + c.layout.h),
+        0,
+      );
+      const pinnedLayout = { x: 0, y: nextY, w: card.layout.w, h: card.layout.h };
       try {
         const res = await fetch("/api/pinned", {
           method: "POST",
@@ -209,7 +235,7 @@ export default function DashboardGrid() {
             id: card.id,
             spec: card.spec,
             originQuery: card.originQuery,
-            layout: card.layout,
+            layout: pinnedLayout,
           }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -224,7 +250,7 @@ export default function DashboardGrid() {
         setError(e instanceof Error ? `Anpinnen fehlgeschlagen: ${e.message}` : "Anpinnen fehlgeschlagen");
       }
     },
-    [cards, persist, refreshPinned],
+    [cards, pinnedCards, persist, refreshPinned],
   );
 
   // Unpin a GLOBAL card → move it back to the PRIVATE set (inverse of pin). The
@@ -271,6 +297,9 @@ export default function DashboardGrid() {
   // layouts to the server (best-effort — the edit is already reflected locally).
   const handlePinnedLayoutChange = useCallback(
     (updates: { id: string; layout: CardBox }[]) => {
+      // Ignore RGL's onLayoutChange during a programmatic pin/unpin/refresh/mount
+      // (spec-11) — only a real user drag/resize must reach the server.
+      if (pinnedMutatingRef.current) return;
       setPinnedCards((prev) => {
         const byId = new Map(updates.map((u) => [u.id, u.layout]));
         let changed = false;

@@ -4,8 +4,9 @@ import "server-only";
  * Interpret a data-step (Flux/InfluxDB) error into a friendly, ACTIONABLE German
  * message (spec §BUG3). The data step runs AFTER Claude has mapped the query, so
  * the failures here are timeouts (query too heavy), missing config, or other
- * server errors. We never raise the InfluxDB timeout (user directive) — instead
- * we explain the cause and suggest how to narrow the query.
+ * server errors. The InfluxDB client timeout is 20 s (doubled on request, see
+ * influx.ts); resolution reduction stays the primary defence. On a timeout we
+ * still explain the cause and suggest how to narrow the query.
  */
 
 export type DataErrorCategory = "timeout" | "config" | "server_error";

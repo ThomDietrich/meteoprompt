@@ -49,6 +49,12 @@ export function PinnedGrid({
     breakpointRef.current = bp;
   }, []);
 
+  // Persist on layout change. Stability (spec-11): the parent GUARDS this against
+  // mount/pin/unpin re-renders (a `mutating` flag) so only a real USER drag/resize
+  // is saved — RGL's mount/programmatic onLayoutChange can't clobber the stored
+  // arrangement. (We keep the default compactor: with it the drag/resize layout
+  // RGL reports is the committed one — noCompactor made onLayoutChange report the
+  // pre-drag layout, so edits silently didn't persist.) Only `lg` is canonical.
   const handleLayoutChange = useCallback(
     (current: Layout) => {
       if (breakpointRef.current !== "lg") return;
