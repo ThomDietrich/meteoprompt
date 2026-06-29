@@ -1206,11 +1206,14 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
     if (def.secondary === "steadiness") {
       return steadiness ? { text: steadiness, title: steadinessTitle } : undefined;
     }
+    // Append the unit — the secondary reads clearer with it (e.g. "↑ 21,9 km/h").
+    // "–" (UV) means no unit.
+    const u = unit && unit !== "–" ? ` ${unit}` : "";
     const max = secMaxByEntity.get(entityId);
     if (def.secondary === "todayMax") {
       if (max == null) return undefined;
       return {
-        text: `↑ ${formatSecondaryNumber(max.v, unit)}`,
+        text: `↑ ${formatSecondaryNumber(max.v, unit)}${u}`,
         title: `Maximum um ${hhmm(max.t)} Uhr`,
       };
     }
@@ -1218,7 +1221,7 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
     const min = secMinByEntity.get(entityId);
     if (min == null || max == null) return undefined;
     return {
-      text: `↓ ${formatSecondaryNumber(min.v, unit)} ↑ ${formatSecondaryNumber(max.v, unit)}`,
+      text: `↓ ${formatSecondaryNumber(min.v, unit)} ↑ ${formatSecondaryNumber(max.v, unit)}${u}`,
       title: `Tief um ${hhmm(min.t)} Uhr · Hoch um ${hhmm(max.t)} Uhr`,
     };
   }
