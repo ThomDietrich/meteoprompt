@@ -1059,6 +1059,15 @@ function formatSecondaryNumber(v: number, unit: string): string {
   });
 }
 
+/** Local HH:MM (Europe/Berlin via the container TZ) for a Kennwert secondary tooltip. */
+function hhmm(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? ""
+    : d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+}
+
 /**
  * Resolve the 12 Kennwerte: one `last()`-per-entity query for the "latest"
  * metrics (whitelist of catalog entityIds), a daily-max query for "Regen heute"
@@ -1132,20 +1141,59 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
   |> keep(columns: ["entity_id", "_time", "_value"])`
     : null;
 
+  // Wind-direction steadiness (spec-10): two today-scoped scalars — the mean of
+  // cos(θ) and sin(θ) over the raw directions. The resultant length
+  // r = √(mc²+ms²) is the directional constancy (0 = constantly shifting,
+  // 1 = constant). Over-sampling is harmless — duplicate readings scale mc/ms
+  // equally, leaving r unchanged.
+  const windDirCat = getByKey("wind_direction");
+  const trigFlux = (fn: "cos" | "sin"): string | null =>
+    windDirCat
+      ? `import "math"\n${TZ_PREAMBLE}from(bucket: "${bucket}")
+  |> range(start: today())
+  |> filter(fn: (r) => r["entity_id"] == "${windDirCat.entityId}" and r["_field"] == "value")
+  |> map(fn: (r) => ({ r with _value: math.${fn}(x: r._value * math.pi / 180.0) }))
+  |> mean()`
+      : null;
+  const cosFlux = trigFlux("cos");
+  const sinFlux = trigFlux("sin");
+
   // ONE batch so /api/now is a single round of parallel queries.
-  const [latestRows, rainPoints, secMinRows, secMaxRows] = await Promise.all([
-    runFluxEntityRows(latestFlux),
-    rainFlux ? runFluxPoints(rainFlux) : Promise.resolve([]),
-    secMinFlux ? runFluxEntityRows(secMinFlux) : Promise.resolve([]),
-    secMaxFlux ? runFluxEntityRows(secMaxFlux) : Promise.resolve([]),
-  ]);
+  const [latestRows, rainPoints, secMinRows, secMaxRows, cosMean, sinMean] =
+    await Promise.all([
+      runFluxEntityRows(latestFlux),
+      rainFlux ? runFluxPoints(rainFlux) : Promise.resolve([]),
+      secMinFlux ? runFluxEntityRows(secMinFlux) : Promise.resolve([]),
+      secMaxFlux ? runFluxEntityRows(secMaxFlux) : Promise.resolve([]),
+      cosFlux ? runFluxScalar(cosFlux) : Promise.resolve(null),
+      sinFlux ? runFluxScalar(sinFlux) : Promise.resolve(null),
+    ]);
 
   const latestByEntity = new Map(latestRows.map((r) => [r.entityId, r]));
-  const secMinByEntity = new Map(secMinRows.map((r) => [r.entityId, r.v]));
-  const secMaxByEntity = new Map(secMaxRows.map((r) => [r.entityId, r.v]));
+  const secMinByEntity = new Map(secMinRows.map((r) => [r.entityId, r]));
+  const secMaxByEntity = new Map(secMaxRows.map((r) => [r.entityId, r]));
 
   const rainTodayValue = rainPoints.length > 0 ? rainPoints[0].v : null;
   const rainTodayTime = rainPoints.length > 0 ? rainPoints[0].t : null;
+
+  // Resolve the directional steadiness into a pre-formatted secondary + tooltip.
+  let steadiness: string | undefined;
+  let steadinessTitle: string | undefined;
+  if (cosMean != null && sinMean != null) {
+    const r = Math.min(1, Math.sqrt(cosMean * cosMean + sinMean * sinMean));
+    const pct = Math.round(r * 100);
+    const label =
+      r >= 0.85
+        ? "sehr stetig"
+        : r >= 0.65
+          ? "überwiegend stetig"
+          : r >= 0.4
+            ? "wechselhaft"
+            : "stark wechselnd";
+    steadiness = `${pct} % · ${label}`;
+    steadinessTitle =
+      "Richtungs-Stetigkeit heute (0 % = ständig drehend, 100 % = konstante Richtung)";
+  }
 
   // Build the muted secondary string for a def (today low/high or peak), or
   // undefined when the needed value(s) are missing — the main value still shows.
@@ -1153,16 +1201,26 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
     def: (typeof KENNWERTE)[number],
     entityId: string,
     unit: string,
-  ): string | undefined {
+  ): { text: string; title?: string } | undefined {
     if (!def.secondary) return undefined;
+    if (def.secondary === "steadiness") {
+      return steadiness ? { text: steadiness, title: steadinessTitle } : undefined;
+    }
     const max = secMaxByEntity.get(entityId);
     if (def.secondary === "todayMax") {
-      return max == null ? undefined : `↑ ${formatSecondaryNumber(max, unit)}`;
+      if (max == null) return undefined;
+      return {
+        text: `↑ ${formatSecondaryNumber(max.v, unit)}`,
+        title: `Maximum um ${hhmm(max.t)} Uhr`,
+      };
     }
     // todayMinMax
     const min = secMinByEntity.get(entityId);
     if (min == null || max == null) return undefined;
-    return `↓ ${formatSecondaryNumber(min, unit)} ↑ ${formatSecondaryNumber(max, unit)}`;
+    return {
+      text: `↓ ${formatSecondaryNumber(min.v, unit)} ↑ ${formatSecondaryNumber(max.v, unit)}`,
+      title: `Tief um ${hhmm(min.t)} Uhr · Hoch um ${hhmm(max.t)} Uhr`,
+    };
   }
 
   // Assemble in KENNWERTE order.
@@ -1182,7 +1240,7 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
 
     const row = cat ? latestByEntity.get(cat.entityId) : undefined;
     const value = row?.v ?? null;
-    const secondary = cat ? buildSecondary(def, cat.entityId, unit) : undefined;
+    const sec = cat ? buildSecondary(def, cat.entityId, unit) : undefined;
     return {
       key: def.key,
       label: def.label,
@@ -1192,7 +1250,8 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
       ...(def.compass && value != null
         ? { compass: degreesToCompass(value) }
         : {}),
-      ...(secondary ? { secondary } : {}),
+      ...(sec ? { secondary: sec.text } : {}),
+      ...(sec?.title ? { secondaryTitle: sec.title } : {}),
     };
   });
 }

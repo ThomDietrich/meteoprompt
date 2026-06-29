@@ -84,7 +84,12 @@ function Cell({ kv }: { kv: KennwertValue }) {
           {compassText}
         </div>
         {kv.secondary && (
-          <div className="mt-0.5 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
+          <div
+            className={`mt-0.5 text-[11px] tabular-nums text-slate-400 dark:text-slate-500${
+              kv.secondaryTitle ? " cursor-help" : ""
+            }`}
+            title={kv.secondaryTitle}
+          >
             {kv.secondary}
           </div>
         )}
