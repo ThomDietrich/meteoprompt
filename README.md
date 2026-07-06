@@ -30,9 +30,9 @@ server-side and never reach the browser.
   "current conditions" strip.
 - **Global pinning:** pin a card to make it visible to everyone (stored server-side);
   unpinned cards stay private to the browser.
-- **Data-quality aware:** rain via the daily accumulator, evapotranspiration via a
-  dedup-then-sum of the per-interval value, timezone-correct daily/hourly windows —
-  see [`docs/data-quality-influxdb.md`](./docs/data-quality-influxdb.md).
+- **Data-quality aware:** rain and evapotranspiration via their daily accumulators
+  (difference-then-sum), timezone-correct daily/hourly windows — see
+  [`docs/data-quality-influxdb.md`](./docs/data-quality-influxdb.md).
 
 ## How it works
 
@@ -48,6 +48,44 @@ prompt ──▶ /api/ask ──▶ Claude (tool-use) ──▶ QuerySpec ──
 The InfluxDB token is **read-only** and used only server-side. A locally configured
 InfluxDB **MCP server** is a development/agent tool for data exploration only — it is
 not part of the app's runtime.
+
+## Where the data comes from
+
+MeteoPrompt only ever **reads** from InfluxDB — it never talks to the weather station.
+Getting the readings into InfluxDB is a separate ingestion pipeline; MeteoPrompt is the
+last hop:
+
+```mermaid
+flowchart LR
+    HW["🌦️ Weather station<br/>Ecowitt / Ventus W830"]
+    WX["WeeWX<br/>capture + derived values<br/>ET · dew point · daily<br/>accumulators · showers"]
+    EXT["weewx-home-assistant<br/>extension<br/>(MQTT Discovery)"]
+    MQTT["MQTT broker<br/>Mosquitto"]
+    HA["Home Assistant<br/>entities<br/>garten_ventus_w830_*"]
+    IDB[("InfluxDB 2.x<br/>bucket · ~4.6 y history")]
+    APP["MeteoPrompt<br/>Next.js · Flux · Claude<br/>server-side · read token"]
+    UI["🌐 Browser<br/>ECharts · TanStack Table"]
+
+    HW --> WX --> EXT --> MQTT --> HA --> IDB
+    IDB -->|"@influxdata/influxdb-client"| APP -->|"JSON"| UI
+```
+
+- **WeeWX** polls the station hardware and computes derived quantities
+  (evapotranspiration, dew point, daily min/max, rain-shower events, sunshine duration …).
+- The **weewx-home-assistant** extension publishes every entity via MQTT Discovery,
+  **once per archive record (~5 min)** — one write per interval, no LOOP over-sampling.
+- **Home Assistant** materialises them as `garten_ventus_w830_*` entities and writes
+  them to **InfluxDB** — numeric values in `_field == "value"`, and ISO-time / enum /
+  on-off states in `_field == "state"`.
+- **MeteoPrompt** queries InfluxDB with Flux, server-side only. The metric catalog
+  ([`src/lib/catalog.ts`](./src/lib/catalog.ts)) is the single source of truth mapping
+  friendly keys → `entity_id`s; read conventions (daily accumulators, dedup, timezone)
+  live in [`docs/data-quality-influxdb.md`](./docs/data-quality-influxdb.md).
+
+> The reference station feeds ~30 numeric series plus derived event/state series (rain
+> showers, daily temperature extremes with timestamps, station connectivity …). The
+> migration from the older `weather_station_*` feed to this one is recorded in
+> [`docs/iterations/`](./docs/iterations/) (spec-12).
 
 ## Tech stack
 
@@ -66,8 +104,9 @@ not part of the app's runtime.
 
 - **Docker & Docker Compose** — the app runs in containers, not natively.
 - An **InfluxDB 2.x** instance holding weather time-series. The bundled metric catalog
-  targets a WeeWX/Ecowitt `weather_station_*` schema as logged by Home Assistant;
-  adapting to a different schema means editing [`src/lib/catalog.ts`](./src/lib/catalog.ts).
+  targets a WeeWX/Ecowitt station published to Home Assistant via the
+  **weewx-home-assistant** extension (`garten_ventus_w830_*` entities); adapting to a
+  different schema means editing [`src/lib/catalog.ts`](./src/lib/catalog.ts).
 - A **read-only InfluxDB token**.
 - An **Anthropic API key** (for the natural-language feature).
 

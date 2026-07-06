@@ -53,7 +53,7 @@ export interface DayStats {
   tempMean: number | null;
   /** Correct daily rain total in mm (dayrain accumulator's daily max). */
   rainMm: number | null;
-  /** Strongest wind gust of the day (km/h). */
+  /** Strongest wind gust of the day (m/s). */
   windGustMax: number | null;
   /** Peak solar radiation of the day (W/m²) — a proxy for how sunny it was. */
   solarMax: number | null;
@@ -112,7 +112,7 @@ export async function computeOverviewStats(): Promise<OverviewStats> {
   const bucket = influxBucket();
 
   const tempCat = getByKey("outdoor_temperature");
-  const rainCat = getByKey("rainfall"); // dayrain_mm accumulator
+  const rainCat = getByKey("rainfall"); // regen_tag daily accumulator
   const gustCat = getByKey("wind_gust");
   const solarCat = getByKey("solar_radiation");
 

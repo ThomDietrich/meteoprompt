@@ -46,7 +46,7 @@ export class ChartShapeError extends Error {
  * so the LLM cannot inject a free entity string or spray across the 30k entities.
  *
  * Accumulator special-case (rainCounter metrics rainfall / evapotranspiration):
- * daily counters are differentiated then summed — never summed raw. See §7 and
+ * daily counters are differentiated then summed — never summed raw. See
  * docs/data-quality-influxdb.md.
  */
 
@@ -242,8 +242,8 @@ function buildSeriesFlux(
   // its final pipe before yield — guarantees chronological order. Unsorted Flux
   // results (aggregateWindow over multi-shard ranges) caused a phantom first↔last
   // connecting line/arc on the chart. See TERMINAL_SORT.
-  // Rain accumulator (rainfall): differentiate the daily counter (nonNegative
-  // caps the midnight reset) then sum over the window.
+  // Daily accumulator (rainfall + evapotranspiration): differentiate the daily
+  // counter (nonNegative caps the midnight reset) then sum over the window.
   if (cat.rainCounter) {
     const requested = sanitizeWindow(
       series.source.window ?? cat.defaultWindow,
@@ -260,28 +260,6 @@ function buildSeriesFlux(
     return `${base}
   |> group(columns: ["entity_id"])
   |> difference(nonNegative: true)
-  |> aggregateWindow(every: ${window}, fn: sum, createEmpty: false${timeSrcClause(window)})
-  ${TERMINAL_SORT}
-  |> yield(name: "${series.id}")`;
-  }
-
-  // Dedup-sum (evapotranspiration): WeeWX `ET` is a per-interval delta (summable
-  // like rain), but Home Assistant OVER-SAMPLES it — it re-reads every ~16s plus
-  // ns-offset duplicate writes, so each archive value lands ~19× and a naive sum
-  // is ~19× too high (~90 mm/day). Collapse the over-sampling with a `last` at
-  // the station's ARCHIVE INTERVAL (5 min — forensically confirmed; update if the
-  // station's interval changes), THEN sum over the requested window. The dayET
-  // accumulator (`_dailysensor_mm`) is broken (non-monotonic) so the rain-style
-  // max/day method is NOT usable. See docs/data-quality-influxdb.md §ET.
-  if (cat.dedupSum) {
-    const dedup = sanitizeWindow(cat.dedupWindow ?? "5m", "5m");
-    const requested = sanitizeWindow(
-      series.source.window ?? cat.defaultWindow,
-      cat.defaultWindow,
-    );
-    const window = adaptiveWindow(timeRange, requested);
-    return `${base}
-  |> aggregateWindow(every: ${dedup}, fn: last, createEmpty: false)
   |> aggregateWindow(every: ${window}, fn: sum, createEmpty: false${timeSrcClause(window)})
   ${TERMINAL_SORT}
   |> yield(name: "${series.id}")`;
@@ -609,6 +587,9 @@ async function resolveDerivedSeries(
     throw new Error("resolveDerivedSeries called on a non-derived series");
   }
   const src = series.source;
+  if (src.transform === "waterBalance") {
+    return resolveWaterBalance(bucket, series, spec);
+  }
   if (!isTransform(src.transform)) {
     throw new ChartShapeError(`Unbekannte Transform: ${src.transform}`);
   }
@@ -635,6 +616,80 @@ async function resolveDerivedSeries(
     role: series.role,
     color: series.color,
     points: result.cumulative,
+  };
+}
+
+/**
+ * spec-12 P1: cumulative climatic water balance = Σ (daily rain − daily ET), in mm.
+ * Rain from the daily accumulator `regen_tag` (difference(nonNegative)+sum, robust
+ * over the full ~4.6y history). ET from `evapotranspiration_intervall` deduped at the
+ * 5-min archive interval then summed — this is the ONLY ET series with real history
+ * (~2024+; `evapotranspiration_tag` is forward-only from 2026-07). That interval series
+ * was HA-oversampled historically, so dedup(5m last) is required; forward it is 1×/5min
+ * so the dedup is a harmless no-op. Days aligned on the Europe/Berlin calendar day;
+ * missing ET days count as 0. Rising line = water surplus, falling = drought stress.
+ */
+const ET_INTERVAL_ENTITY = "garten_ventus_w830_evapotranspiration_intervall";
+
+async function resolveWaterBalance(
+  bucket: string,
+  series: Series,
+  spec: ChartSpec,
+): Promise<ResolvedSeries> {
+  const rainCat = getByKey("rainfall");
+  if (!rainCat) {
+    throw new ChartShapeError("Wasserbilanz: Regen-Serie fehlt im Katalog");
+  }
+
+  const tr = seriesTimeRange(series, spec);
+  const start = sanitizeRangeToken(tr.start, "-90d");
+  const stop = sanitizeRangeToken(tr.stop ?? "now", "now()");
+  const window = adaptiveWindow(tr, "1d");
+
+  // Daily rain totals from the accumulator (difference+sum; group bridges shards).
+  const rainFlux = `${TZ_PREAMBLE}from(bucket: "${bucket}")
+  |> range(start: ${start}, stop: ${stop})
+  |> filter(fn: (r) => r["entity_id"] == "${rainCat.entityId}")
+  |> filter(fn: (r) => r["_field"] == "value")
+  |> group(columns: ["entity_id"])
+  |> difference(nonNegative: true)
+  |> aggregateWindow(every: ${window}, fn: sum, createEmpty: false${timeSrcClause(window)})
+  ${TERMINAL_SORT}`;
+
+  // Daily ET totals: dedup HA-oversampling at the 5-min archive interval, then sum.
+  const etFlux = `${TZ_PREAMBLE}from(bucket: "${bucket}")
+  |> range(start: ${start}, stop: ${stop})
+  |> filter(fn: (r) => r["entity_id"] == "${ET_INTERVAL_ENTITY}")
+  |> filter(fn: (r) => r["_field"] == "value")
+  |> aggregateWindow(every: 5m, fn: last, createEmpty: false)
+  |> aggregateWindow(every: ${window}, fn: sum, createEmpty: false${timeSrcClause(window)})
+  ${TERMINAL_SORT}`;
+
+  const [rainPts, etPts] = await Promise.all([
+    runFluxPoints(rainFlux),
+    runFluxPoints(etFlux),
+  ]);
+
+  const rainByDay = new Map(rainPts.map((p) => [dayKey(p.t), p.v]));
+  const etByDay = new Map(etPts.map((p) => [dayKey(p.t), p.v]));
+  const tByDay = new Map<string, string>();
+  for (const p of rainPts) tByDay.set(dayKey(p.t), p.t);
+  for (const p of etPts) if (!tByDay.has(dayKey(p.t))) tByDay.set(dayKey(p.t), p.t);
+
+  const days = [...tByDay.keys()].sort();
+  let running = 0;
+  const points: SeriesPoint[] = days.map((day) => {
+    running += (rainByDay.get(day) ?? 0) - (etByDay.get(day) ?? 0);
+    return { t: tByDay.get(day) as string, v: Math.round(running * 10) / 10 };
+  });
+
+  return {
+    id: series.id,
+    label: series.label || "Wasserbilanz (Regen − Verdunstung)",
+    unit: "mm",
+    role: series.role,
+    color: series.color,
+    points,
   };
 }
 
@@ -979,8 +1034,7 @@ export async function resolveAnswer(
   }
 
   if (answer.kind === "scalar") {
-    // Rain accumulator → sum the differenced counter; over-sampled ET → dedup
-    // (archive-interval last) then sum; else aggregate raw.
+    // Daily accumulator (rain + ET) → sum the differenced counter; else aggregate raw.
     let flux: string;
     if (cat.rainCounter && answer.agg === "sum") {
       flux = `${TZ_PREAMBLE}from(bucket: "${bucket}")
@@ -989,15 +1043,6 @@ export async function resolveAnswer(
   |> filter(fn: (r) => r["_field"] == "value")
   |> group(columns: ["entity_id"])
   |> difference(nonNegative: true)
-  |> sum()
-  |> keep(columns: ["_value"])`;
-    } else if (cat.dedupSum && answer.agg === "sum") {
-      const dedup = sanitizeWindow(cat.dedupWindow ?? "5m", "5m");
-      flux = `${TZ_PREAMBLE}from(bucket: "${bucket}")
-  |> range(start: ${start}, stop: ${stop})
-  |> filter(fn: (r) => r["entity_id"] == "${cat.entityId}")
-  |> filter(fn: (r) => r["_field"] == "value")
-  |> aggregateWindow(every: ${dedup}, fn: last, createEmpty: false)
   |> sum()
   |> keep(columns: ["_value"])`;
     } else {
@@ -1096,7 +1141,7 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
   |> last()
   |> keep(columns: ["entity_id", "_time", "_value"])`;
 
-  // "Regen heute" = today's daily-max of the rain accumulator (dayrain_mm).
+  // "Regen heute" = today's daily-max of the rain accumulator (regen_tag).
   // TZ preamble makes today() = Europe/Berlin midnight (not UTC midnight), so
   // "Regen heute" (and the secondary min/max below) cover the correct local day.
   const rainDef = KENNWERTE.find((k) => k.aggregation === "rainToday");
@@ -1141,6 +1186,45 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
   |> keep(columns: ["entity_id", "_time", "_value"])`
     : null;
 
+  // Gauge KPIs (e.g. trockenperiode): slowly/on-change-updating counters whose last
+  // write can be >6h old → last() over a WIDE (-3d) window so the value is present.
+  const gaugeDefs = KENNWERTE.filter((k) => k.aggregation === "gauge");
+  const gaugeEntityToDef = new Map<string, (typeof KENNWERTE)[number]>();
+  for (const def of gaugeDefs) {
+    const cat = getByKey(def.key);
+    if (cat) gaugeEntityToDef.set(cat.entityId, def);
+  }
+  const gaugeEntityIds = [...gaugeEntityToDef.keys()];
+  const gaugeFlux = gaugeEntityIds.length
+    ? `${TZ_PREAMBLE}from(bucket: "${bucket}")
+  |> range(start: -3d)
+  |> filter(fn: (r) => r["_field"] == "value")
+  |> filter(fn: (r) => r["entity_id"] =~ /${gaugeEntityIds.map((e) => `^${e}$`).join("|")}/)
+  |> group(columns: ["entity_id"])
+  |> last()
+  |> keep(columns: ["entity_id", "_time", "_value"])`
+    : null;
+
+  // todayTotal KPIs (e.g. sonnenscheindauer_tag): today-scoped max() of a daily
+  // accumulator = the total so far today (like rainToday). group per entity bridges
+  // the shard boundary.
+  const todayTotalDefs = KENNWERTE.filter((k) => k.aggregation === "todayTotal");
+  const ttEntityToDef = new Map<string, (typeof KENNWERTE)[number]>();
+  for (const def of todayTotalDefs) {
+    const cat = getByKey(def.key);
+    if (cat) ttEntityToDef.set(cat.entityId, def);
+  }
+  const ttEntityIds = [...ttEntityToDef.keys()];
+  const todayTotalFlux = ttEntityIds.length
+    ? `${TZ_PREAMBLE}from(bucket: "${bucket}")
+  |> range(start: today())
+  |> filter(fn: (r) => r["_field"] == "value")
+  |> filter(fn: (r) => r["entity_id"] =~ /${ttEntityIds.map((e) => `^${e}$`).join("|")}/)
+  |> group(columns: ["entity_id"])
+  |> max()
+  |> keep(columns: ["entity_id", "_time", "_value"])`
+    : null;
+
   // Wind-direction steadiness (spec-10): two today-scoped scalars — the mean of
   // cos(θ) and sin(θ) over the raw directions. The resultant length
   // r = √(mc²+ms²) is the directional constancy (0 = constantly shifting,
@@ -1159,19 +1243,31 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
   const sinFlux = trigFlux("sin");
 
   // ONE batch so /api/now is a single round of parallel queries.
-  const [latestRows, rainPoints, secMinRows, secMaxRows, cosMean, sinMean] =
-    await Promise.all([
-      runFluxEntityRows(latestFlux),
-      rainFlux ? runFluxPoints(rainFlux) : Promise.resolve([]),
-      secMinFlux ? runFluxEntityRows(secMinFlux) : Promise.resolve([]),
-      secMaxFlux ? runFluxEntityRows(secMaxFlux) : Promise.resolve([]),
-      cosFlux ? runFluxScalar(cosFlux) : Promise.resolve(null),
-      sinFlux ? runFluxScalar(sinFlux) : Promise.resolve(null),
-    ]);
+  const [
+    latestRows,
+    rainPoints,
+    secMinRows,
+    secMaxRows,
+    cosMean,
+    sinMean,
+    gaugeRows,
+    todayTotalRows,
+  ] = await Promise.all([
+    runFluxEntityRows(latestFlux),
+    rainFlux ? runFluxPoints(rainFlux) : Promise.resolve([]),
+    secMinFlux ? runFluxEntityRows(secMinFlux) : Promise.resolve([]),
+    secMaxFlux ? runFluxEntityRows(secMaxFlux) : Promise.resolve([]),
+    cosFlux ? runFluxScalar(cosFlux) : Promise.resolve(null),
+    sinFlux ? runFluxScalar(sinFlux) : Promise.resolve(null),
+    gaugeFlux ? runFluxEntityRows(gaugeFlux) : Promise.resolve([]),
+    todayTotalFlux ? runFluxEntityRows(todayTotalFlux) : Promise.resolve([]),
+  ]);
 
   const latestByEntity = new Map(latestRows.map((r) => [r.entityId, r]));
   const secMinByEntity = new Map(secMinRows.map((r) => [r.entityId, r]));
   const secMaxByEntity = new Map(secMaxRows.map((r) => [r.entityId, r]));
+  const gaugeByEntity = new Map(gaugeRows.map((r) => [r.entityId, r]));
+  const todayTotalByEntity = new Map(todayTotalRows.map((r) => [r.entityId, r]));
 
   const rainTodayValue = rainPoints.length > 0 ? rainPoints[0].v : null;
   const rainTodayTime = rainPoints.length > 0 ? rainPoints[0].t : null;
@@ -1206,7 +1302,7 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
     if (def.secondary === "steadiness") {
       return steadiness ? { text: steadiness, title: steadinessTitle } : undefined;
     }
-    // Append the unit — the secondary reads clearer with it (e.g. "↑ 21,9 km/h").
+    // Append the unit — the secondary reads clearer with it (e.g. "↑ 6,1 m/s").
     // "–" (UV) means no unit.
     const u = unit && unit !== "–" ? ` ${unit}` : "";
     const max = secMaxByEntity.get(entityId);
@@ -1239,6 +1335,16 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
         value: rainTodayValue,
         t: rainTodayTime,
       };
+    }
+
+    if (def.aggregation === "gauge") {
+      const g = cat ? gaugeByEntity.get(cat.entityId) : undefined;
+      return { key: def.key, label: def.label, unit, value: g?.v ?? null, t: g?.t ?? null };
+    }
+
+    if (def.aggregation === "todayTotal") {
+      const tt = cat ? todayTotalByEntity.get(cat.entityId) : undefined;
+      return { key: def.key, label: def.label, unit, value: tt?.v ?? null, t: tt?.t ?? null };
     }
 
     const row = cat ? latestByEntity.get(cat.entityId) : undefined;

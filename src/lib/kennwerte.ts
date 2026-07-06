@@ -7,7 +7,16 @@
  * from the catalog server-side so the entity whitelist stays single-sourced.
  */
 
-export type KennwertAggregation = "latest" | "rainToday";
+/**
+ * How a Kennwert's primary value is read:
+ * - `latest` — last() over a short (-6h) window; for continuously-updating live values.
+ * - `rainToday` — today-scoped max() of the rain daily accumulator (regen_tag).
+ * - `gauge` — last() over a WIDE (-3d) window; for slowly/on-change-updating counters
+ *   (e.g. `trockenperiode`, days-since-rain) whose last write may be >6h old.
+ * - `todayTotal` — today-scoped max() of a daily accumulator (e.g. `sonnenscheindauer_tag`,
+ *   hours of sunshine so far today); generalises `rainToday` to any daily accumulator.
+ */
+export type KennwertAggregation = "latest" | "rainToday" | "gauge" | "todayTotal";
 
 /**
  * Today's secondary context shown under a Kennwert: today's low/high
@@ -39,8 +48,10 @@ export const KENNWERTE: KennwertDef[] = [
   { key: "wind_direction", label: "Windrichtung", icon: "Compass", aggregation: "latest", compass: true, secondary: "steadiness" },
   { key: "rainfall", label: "Regen heute", icon: "CloudRain", aggregation: "rainToday" },
   { key: "rain_rate", label: "Regenrate", icon: "CloudDrizzle", aggregation: "latest" },
+  { key: "dry_spell", label: "Trockenperiode", icon: "CalendarOff", aggregation: "gauge" },
   { key: "pressure", label: "Luftdruck", icon: "Gauge", aggregation: "latest", secondary: "todayMinMax" },
   { key: "solar_radiation", label: "Sonne", icon: "Sun", aggregation: "latest", secondary: "todayMax" },
+  { key: "sunshine_duration", label: "Sonnenstunden", icon: "SunDim", aggregation: "todayTotal" },
   { key: "uv_index", label: "UV", icon: "SunMedium", aggregation: "latest", secondary: "todayMax" },
 ];
 

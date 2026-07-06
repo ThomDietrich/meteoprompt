@@ -163,9 +163,14 @@ export interface DerivedSource {
   unit?: string;
 }
 
-/** Named server-side transforms (degree-day registry). */
-export type TransformName = "gdd" | "hdd" | "cdd";
-export const TRANSFORM_NAMES = ["gdd", "hdd", "cdd"] as const;
+/**
+ * Named server-side transforms. `gdd`/`hdd`/`cdd` are the single-input degree-day
+ * registry (transforms.ts). `waterBalance` is a two-input transform (rain − ET)
+ * resolved bespoke in flux.ts (resolveWaterBalance) — cumulative climatic water
+ * balance in mm.
+ */
+export type TransformName = "gdd" | "hdd" | "cdd" | "waterBalance";
+export const TRANSFORM_NAMES = ["gdd", "hdd", "cdd", "waterBalance"] as const;
 
 export type Aggregation = "mean" | "sum" | "min" | "max" | "none";
 

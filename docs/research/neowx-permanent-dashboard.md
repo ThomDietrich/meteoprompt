@@ -3,7 +3,8 @@
 > Referenz-Doku (Quelle für spec-03 „Rahmen"). Stand 2026-06-26. Quelle:
 > WebFetch von https://wetter.nurzen.de/neowx/ (17 Kennwert-Kacheln + 16 Chart-Namen
 > sichtbar; Seite teils JS-gerendert) + NeoWX-Material-Docs (neoground.com) / WeeWX-Skin.
-> Reale Katalog-Keys siehe `src/lib/catalog.ts`. **Hinweis:** Wind bei uns **km/h** (nicht m/s).
+> Reale Katalog-Keys siehe `src/lib/catalog.ts`. **Hinweis:** Wind bei uns **m/s** (Feed = WeeWX
+> METRICWX; frühere Notiz „km/h" galt für den alten `_kph`-Feed und ist überholt — s. spec-12).
 
 NeoWX hat ~30–40 Karten in vier Zeitbereichen (Heute 10-min, Woche 4h, Monat 6h, Jahr 1-Tag).
 Ziel: drastisch reduzieren — schlanke Kennwert-Zeile oben + 10 feste Charts unten.

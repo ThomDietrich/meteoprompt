@@ -209,6 +209,32 @@ export const PERMANENT_GROUPS: PermanentGroup[] = [
         caption:
           "Verdunstung pro Tag (Boden + Pflanzen) — hohe Werte bei wenig Regen bedeuten Trockenstress; nützlich fürs Gießen.",
       },
+      {
+        spec: {
+          id: "perm-wasserbilanz",
+          title: "Wasserbilanz (Regen − Verdunstung, 90 Tage)",
+          chart: "line",
+          timeRange: { start: "-90d", stop: "now" },
+          series: [
+            {
+              id: "perm-wasserbilanz-s0",
+              label: "Wasserbilanz (kumuliert)",
+              color: GREEN,
+              source: {
+                kind: "derived",
+                transform: "waterBalance",
+                inputs: [
+                  { metric: "rainfall", as: "rain" },
+                  { metric: "evapotranspiration", as: "et" },
+                ],
+                unit: "mm",
+              },
+            },
+          ],
+        },
+        caption:
+          "Kumulierte Wasserbilanz = Niederschlag − Verdunstung. Steigende Linie = Wasserüberschuss, fallende = Trockenstress; erst mit sauberem Regen UND sauberer ET (neuer Feed) verlässlich.",
+      },
     ],
   },
 
@@ -266,6 +292,19 @@ export const PERMANENT_GROUPS: PermanentGroup[] = [
         },
         caption:
           "Sonnenenergie im Tagesverlauf (Glocke mittags) — glatte Kurve = wolkenlos, zackige = durchziehende Wolken.",
+      },
+      {
+        spec: {
+          id: "perm-sonnenstunden",
+          title: "Sonnenstunden/Tag (30 Tage)",
+          chart: "bars",
+          timeRange: { start: "-30d", stop: "now" },
+          series: [
+            s("perm-sonnenstunden-s0", "Sonnenscheindauer", "sunshine_duration", "sum", "1d", { color: GOLD }),
+          ],
+        },
+        caption:
+          "Echte Sonnenscheindauer je Tag (Stunden) — hohe Balken = sonnige Tage, kurze/fehlende = trüb. Neue Serie ab Juli 2026 (wächst mit).",
       },
       {
         spec: {

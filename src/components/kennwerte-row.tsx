@@ -13,6 +13,8 @@ import {
   CloudDrizzle,
   Sun,
   SunMedium,
+  SunDim,
+  CalendarOff,
   type LucideIcon,
 } from "lucide-react";
 
@@ -42,6 +44,8 @@ const ICONS: Record<string, LucideIcon> = {
   CloudDrizzle,
   Sun,
   SunMedium,
+  SunDim,
+  CalendarOff,
 };
 
 /** Format a numeric value with a German decimal comma and unit-aware precision. */

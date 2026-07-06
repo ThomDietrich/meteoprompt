@@ -19,8 +19,8 @@ function scaleForUnit(unit: string): { min: number; max: number } {
       return { min: -20, max: 45 };
     case "%":
       return { min: 0, max: 100 };
-    case "km/h":
-      return { min: 0, max: 120 };
+    case "m/s":
+      return { min: 0, max: 30 };
     case "hPa":
       return { min: 960, max: 1050 };
     case "W/m²":

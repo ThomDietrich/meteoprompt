@@ -9,7 +9,7 @@ import type { ResolvedSeries } from "@/lib/query-spec";
 
 /**
  * Wind rose — polar bar chart. Direction series (role 'direction', degrees) and
- * magnitude series (role 'magnitude', km/h) are paired by timestamp: each sample
+ * magnitude series (role 'magnitude', m/s) are paired by timestamp: each sample
  * is binned into one of 8 compass sectors (angle) and one of several speed bins
  * (stacked bars), so the bar length shows how often the wind blew from a sector
  * and the colour stack shows how strong it was. See spec-02 §9 / §12.
@@ -17,13 +17,14 @@ import type { ResolvedSeries } from "@/lib/query-spec";
 
 const SECTORS = ["N", "NO", "O", "SO", "S", "SW", "W", "NW"] as const;
 
-// Speed bins in km/h (upper bounds); the last is open-ended.
+// Speed bins in m/s (upper bounds); the last is open-ended. Boundaries follow
+// Beaufort-ish steps (≈ calm / light / fresh breeze / strong breeze / gale+).
 const SPEED_BINS: { label: string; max: number }[] = [
-  { label: "0–5", max: 5 },
-  { label: "5–15", max: 15 },
-  { label: "15–25", max: 25 },
-  { label: "25–40", max: 40 },
-  { label: "> 40", max: Infinity },
+  { label: "0–2", max: 2 },
+  { label: "2–5", max: 5 },
+  { label: "5–8", max: 8 },
+  { label: "8–14", max: 14 },
+  { label: "> 14", max: Infinity },
 ];
 
 const BIN_COLORS = ["#bae6fd", "#7dd3fc", "#38bdf8", "#0284c7", "#0c4a6e"];

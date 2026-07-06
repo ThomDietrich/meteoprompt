@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { SeriesPoint, TransformName } from "@/lib/query-spec";
+import type { SeriesPoint } from "@/lib/query-spec";
 
 /**
  * Server-side degree-day transform registry (spec-05 §4). Computes derived
@@ -21,6 +21,12 @@ export interface TransformResult {
   label: string;
 }
 
+/**
+ * The single-input degree-day transforms. `waterBalance` is also a TransformName
+ * but is two-input and resolved bespoke in flux.ts — it is NOT in this registry.
+ */
+type DegreeDayTransform = "gdd" | "hdd" | "cdd";
+
 interface TransformDef {
   defaultBase: number;
   label: string;
@@ -28,7 +34,7 @@ interface TransformDef {
   dayValue: (tmean: number, base: number) => number;
 }
 
-const REGISTRY: Record<TransformName, TransformDef> = {
+const REGISTRY: Record<DegreeDayTransform, TransformDef> = {
   gdd: {
     defaultBase: 10,
     label: "Wachstumsgradtage (GDD)",
@@ -46,12 +52,12 @@ const REGISTRY: Record<TransformName, TransformDef> = {
   },
 };
 
-export function isTransform(name: string): name is TransformName {
+export function isTransform(name: string): name is DegreeDayTransform {
   return name === "gdd" || name === "hdd" || name === "cdd";
 }
 
 /** The default base temperature for a transform (when the spec omits `base`). */
-export function defaultBase(name: TransformName): number {
+export function defaultBase(name: DegreeDayTransform): number {
   return REGISTRY[name].defaultBase;
 }
 
@@ -60,7 +66,7 @@ export function defaultBase(name: TransformName): number {
  * `dailyMeans` must already be aggregated to one mean value per day.
  */
 export function applyTransform(
-  name: TransformName,
+  name: DegreeDayTransform,
   dailyMeans: SeriesPoint[],
   base?: number,
 ): TransformResult {
