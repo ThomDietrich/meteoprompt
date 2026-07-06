@@ -9,6 +9,7 @@ import { validateChartDataShape } from "@/lib/chart-catalog";
 import {
   influxBucket,
   runFluxEntityRows,
+  runFluxEntityStateRows,
   runFluxPoints,
   runFluxScalar,
 } from "@/lib/influx";
@@ -1113,6 +1114,22 @@ function hhmm(iso: string | null | undefined): string {
     : d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
 }
 
+/** Local "DD.MM." (Europe/Berlin) for the "Letzter Schauer" date. */
+function ddmm(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? ""
+    : d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+}
+
+// Station-computed "last rain shower" series (NOT in the catalog — event values,
+// not chartable). Amount + duration are numeric; begin/end are ISO `_field=="state"`.
+const SHOWER_AMOUNT_ENTITY = "garten_ventus_w830_regen_letzter_schauer";
+const SHOWER_DURATION_ENTITY = "garten_ventus_w830_regen_schauerdauer";
+const SHOWER_BEGIN_ENTITY = "garten_ventus_w830_regen_schauerbeginn";
+const SHOWER_END_ENTITY = "garten_ventus_w830_regen_schauerende";
+
 /**
  * Resolve the 12 Kennwerte: one `last()`-per-entity query for the "latest"
  * metrics (whitelist of catalog entityIds), a daily-max query for "Regen heute"
@@ -1225,6 +1242,28 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
   |> keep(columns: ["entity_id", "_time", "_value"])`
     : null;
 
+  // "Letzter Schauer" (bespoke): amount + duration (numeric `value`) and begin/end
+  // (ISO `state`). Wide -60d window — these only update when a shower ends.
+  const hasLastShower = KENNWERTE.some((k) => k.aggregation === "lastShower");
+  const showerNumFlux = hasLastShower
+    ? `${TZ_PREAMBLE}from(bucket: "${bucket}")
+  |> range(start: -60d)
+  |> filter(fn: (r) => r["_field"] == "value")
+  |> filter(fn: (r) => r["entity_id"] == "${SHOWER_AMOUNT_ENTITY}" or r["entity_id"] == "${SHOWER_DURATION_ENTITY}")
+  |> group(columns: ["entity_id"])
+  |> last()
+  |> keep(columns: ["entity_id", "_time", "_value"])`
+    : null;
+  const showerStateFlux = hasLastShower
+    ? `${TZ_PREAMBLE}from(bucket: "${bucket}")
+  |> range(start: -60d)
+  |> filter(fn: (r) => r["_field"] == "state")
+  |> filter(fn: (r) => r["entity_id"] == "${SHOWER_BEGIN_ENTITY}" or r["entity_id"] == "${SHOWER_END_ENTITY}")
+  |> group(columns: ["entity_id"])
+  |> last()
+  |> keep(columns: ["entity_id", "_time", "_value"])`
+    : null;
+
   // Wind-direction steadiness (spec-10): two today-scoped scalars — the mean of
   // cos(θ) and sin(θ) over the raw directions. The resultant length
   // r = √(mc²+ms²) is the directional constancy (0 = constantly shifting,
@@ -1252,6 +1291,8 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
     sinMean,
     gaugeRows,
     todayTotalRows,
+    showerNumRows,
+    showerStateRows,
   ] = await Promise.all([
     runFluxEntityRows(latestFlux),
     rainFlux ? runFluxPoints(rainFlux) : Promise.resolve([]),
@@ -1261,6 +1302,10 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
     sinFlux ? runFluxScalar(sinFlux) : Promise.resolve(null),
     gaugeFlux ? runFluxEntityRows(gaugeFlux) : Promise.resolve([]),
     todayTotalFlux ? runFluxEntityRows(todayTotalFlux) : Promise.resolve([]),
+    showerNumFlux ? runFluxEntityRows(showerNumFlux) : Promise.resolve([]),
+    showerStateFlux
+      ? runFluxEntityStateRows(showerStateFlux)
+      : Promise.resolve([]),
   ]);
 
   const latestByEntity = new Map(latestRows.map((r) => [r.entityId, r]));
@@ -1268,6 +1313,10 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
   const secMaxByEntity = new Map(secMaxRows.map((r) => [r.entityId, r]));
   const gaugeByEntity = new Map(gaugeRows.map((r) => [r.entityId, r]));
   const todayTotalByEntity = new Map(todayTotalRows.map((r) => [r.entityId, r]));
+  const showerNumByEntity = new Map(showerNumRows.map((r) => [r.entityId, r]));
+  const showerStateByEntity = new Map(
+    showerStateRows.map((r) => [r.entityId, r]),
+  );
 
   const rainTodayValue = rainPoints.length > 0 ? rainPoints[0].v : null;
   const rainTodayTime = rainPoints.length > 0 ? rainPoints[0].t : null;
@@ -1345,6 +1394,37 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
     if (def.aggregation === "todayTotal") {
       const tt = cat ? todayTotalByEntity.get(cat.entityId) : undefined;
       return { key: def.key, label: def.label, unit, value: tt?.v ?? null, t: tt?.t ?? null };
+    }
+
+    if (def.aggregation === "lastShower") {
+      const amount = showerNumByEntity.get(SHOWER_AMOUNT_ENTITY);
+      const durMin = showerNumByEntity.get(SHOWER_DURATION_ENTITY)?.v;
+      const begin = showerStateByEntity.get(SHOWER_BEGIN_ENTITY)?.s;
+      const end = showerStateByEntity.get(SHOWER_END_ENTITY)?.s;
+      // Secondary: the shower window "05.07. 15:40–21:55"; duration in the tooltip.
+      let secondary: string | undefined;
+      if (begin && end) {
+        secondary =
+          ddmm(begin) === ddmm(end)
+            ? `${ddmm(begin)} ${hhmm(begin)}–${hhmm(end)}`
+            : `${ddmm(begin)} ${hhmm(begin)} – ${ddmm(end)} ${hhmm(end)}`;
+      }
+      const durationTitle =
+        durMin != null
+          ? `Dauer ${(Math.round((durMin / 60) * 10) / 10).toLocaleString("de-DE", {
+              minimumFractionDigits: 1,
+              maximumFractionDigits: 1,
+            })} h`
+          : undefined;
+      return {
+        key: def.key,
+        label: def.label,
+        unit: "mm",
+        value: amount?.v ?? null,
+        t: amount?.t ?? null,
+        ...(secondary ? { secondary } : {}),
+        ...(durationTitle ? { secondaryTitle: durationTitle } : {}),
+      };
     }
 
     const row = cat ? latestByEntity.get(cat.entityId) : undefined;

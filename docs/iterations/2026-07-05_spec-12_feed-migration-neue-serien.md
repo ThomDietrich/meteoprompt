@@ -178,9 +178,15 @@ MIT** über ein **beliebiges historisches Fenster** (-90 d, „mit 6 h Pause"). 
 ---
 
 ## E) Entscheidungen — ✅ bestätigt 2026-07-06
-1. **E1 — Schauer: Hybrid (a).** Stations-Serien für KPI „letzter Schauer" + „Trockenperiode";
-   historischer `showerBars` auf `regen_intervall` umgestellt (Akkumulator-Diff + Peak-Clamp +
-   Shard-`group` entfallen; konfigurierbare MIT bleibt).
+1. **E1 — Schauer: umgesetzt, evidenzbasiert angepasst.** Stations-Serien für KPI **„Letzter
+   Schauer"** (Menge `regen_letzter_schauer` + Beginn/Ende `regen_schauerbeginn/-ende` via
+   `_field=="state"` + Dauer `regen_schauerdauer`) und **„Trockenperiode"** gebaut (neuer
+   `_field=="state"`-Lesepfad `runFluxEntityStateRows` + Kennwert-Aggregation `lastShower`).
+   **Chart-Umbau verworfen:** Live-Verifikation zeigte `regen_intervall` historisch **~29×
+   überabgetastet** (8706 Pkt/Tag Mai 2026, wie ET-Intervall) → naive Summe überzählt; die
+   bestehende `showerBars`-Variante auf `regen_tag` (Akkumulator-Differenz) ist bereits
+   robust/korrekt und **bleibt unverändert** (die „Hacks" sind inhärent für sub-tägliche Events
+   aus einem Tagesakkumulator, kein Bug).
 2. **E2 — Zustands-Serien: bespoke Resolver.** ISO-Zeit/Enum/on-off werden in Kennwerte-/Schauer-
    Resolvern konsumiert, **nicht** ins generische numerische Chart-Katalog-Modell gezwungen.
 3. **E3 — Scope: spec-12 = neue numerische Serien im Katalog + P1** (Trockenperiode-KPI,

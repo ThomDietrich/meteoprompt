@@ -15,8 +15,17 @@
  *   (e.g. `trockenperiode`, days-since-rain) whose last write may be >6h old.
  * - `todayTotal` — today-scoped max() of a daily accumulator (e.g. `sonnenscheindauer_tag`,
  *   hours of sunshine so far today); generalises `rainToday` to any daily accumulator.
+ * - `lastShower` — the station's last rain event: amount (`regen_letzter_schauer`, mm) as
+ *   the value, plus begin/end (`regen_schauerbeginn/-ende`, ISO `_field == "state"`) and
+ *   duration (`regen_schauerdauer`, min) formatted into the secondary line. Bespoke —
+ *   these entities are NOT in the metric catalog (event values, not chartable series).
  */
-export type KennwertAggregation = "latest" | "rainToday" | "gauge" | "todayTotal";
+export type KennwertAggregation =
+  | "latest"
+  | "rainToday"
+  | "gauge"
+  | "todayTotal"
+  | "lastShower";
 
 /**
  * Today's secondary context shown under a Kennwert: today's low/high
@@ -49,6 +58,7 @@ export const KENNWERTE: KennwertDef[] = [
   { key: "rainfall", label: "Regen heute", icon: "CloudRain", aggregation: "rainToday" },
   { key: "rain_rate", label: "Regenrate", icon: "CloudDrizzle", aggregation: "latest" },
   { key: "dry_spell", label: "Trockenperiode", icon: "CalendarOff", aggregation: "gauge" },
+  { key: "last_shower", label: "Letzter Schauer", icon: "CloudRainWind", aggregation: "lastShower" },
   { key: "pressure", label: "Luftdruck", icon: "Gauge", aggregation: "latest", secondary: "todayMinMax" },
   { key: "solar_radiation", label: "Sonne", icon: "Sun", aggregation: "latest", secondary: "todayMax" },
   { key: "sunshine_duration", label: "Sonnenstunden", icon: "SunDim", aggregation: "todayTotal" },

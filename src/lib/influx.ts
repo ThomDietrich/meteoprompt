@@ -128,3 +128,34 @@ export async function runFluxEntityRows(flux: string): Promise<EntityRow[]> {
 
   return rows;
 }
+
+export type EntityStateRow = { entityId: string; t: string; s: string };
+
+/**
+ * Run a Flux query and collect `(entity_id, _time, _value)` rows where `_value` is
+ * a STRING (`_field == "state"`): ISO timestamps, enums, on/off. Numeric `_field ==
+ * "value"` is read by runFluxEntityRows; these state series (e.g. shower begin/end
+ * times) never carry a numeric value. Used by the "Letzter Schauer" Kennwert.
+ */
+export async function runFluxEntityStateRows(
+  flux: string,
+): Promise<EntityStateRow[]> {
+  const queryApi = getQueryApi();
+  const rows: EntityStateRow[] = [];
+
+  for await (const { values, tableMeta } of queryApi.iterateRows(flux)) {
+    const row = tableMeta.toObject(values) as {
+      entity_id?: string;
+      _time?: string;
+      _value?: string | null;
+    };
+
+    if (row.entity_id == null || row._time == null || row._value == null) {
+      continue;
+    }
+
+    rows.push({ entityId: row.entity_id, t: row._time, s: String(row._value) });
+  }
+
+  return rows;
+}
