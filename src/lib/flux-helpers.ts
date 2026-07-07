@@ -177,6 +177,11 @@ export function compareOp(op: string): "<" | "<=" | ">" | ">=" {
   }
 }
 
+/** Round to one decimal — the chart/label/tooltip precision used across the app. */
+export function round1(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
 /**
  * Map a daily bucket's `_time` to its Europe/Berlin calendar date. After the
  * TZ_PREAMBLE shifts daily buckets to local midnight (e.g. `…T22:00:00Z` of the

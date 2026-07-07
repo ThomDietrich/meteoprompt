@@ -1,3 +1,4 @@
+import { round1 } from "@/lib/flux-helpers";
 import type { SeriesPoint, ShowerEvent } from "@/lib/query-spec";
 
 /**
@@ -27,11 +28,6 @@ const MS_PER_HOUR = 3_600_000;
  * archive interval, so that is the shortest gap a real reading pair should show.
  */
 const MIN_INTERVAL_H = 5 / 60;
-
-/** Round to one decimal — matches the chart-label / tooltip precision. */
-function round1(n: number): number {
-  return Math.round(n * 10) / 10;
-}
 
 /**
  * Group time-sorted wet rain increments into discrete shower events. A gap to the

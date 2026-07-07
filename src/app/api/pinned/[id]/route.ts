@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { removePinned } from "@/lib/pinned";
+import { storeError } from "../store-error";
 
 // Unpin a card (remove from the global set). force-dynamic — writes at runtime.
 export const dynamic = "force-dynamic";
@@ -25,8 +26,6 @@ export async function DELETE(
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("[api/pinned/:id] delete failed:", message);
-    return NextResponse.json({ error: "store_error", detail: message }, { status: 500 });
+    return storeError("[api/pinned/:id] delete failed:", error);
   }
 }

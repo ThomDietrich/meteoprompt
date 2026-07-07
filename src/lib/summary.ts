@@ -1,7 +1,7 @@
 import "server-only";
 
-import Anthropic from "@anthropic-ai/sdk";
-
+import { runClaudeText } from "@/lib/claude-runtime";
+import { round1 } from "@/lib/flux-helpers";
 import type {
   ChartSpec,
   ResolvedAnswer,
@@ -24,9 +24,6 @@ import type {
  * or advising. Called ONLY for NL cards (those with an originQuery) in /api/ask
  * and /api/chart — never for the permanent dashboard (cost/latency).
  */
-
-/** Model for the narrative — same family as /api/ask (quality, spec decision 1). */
-const MODEL = "claude-sonnet-4-6";
 
 /** Hard cap so a runaway response can't blow past the ≤100-word target. */
 const MAX_TOKENS = 220;
@@ -70,11 +67,6 @@ export interface SeriesStats {
   sum: number | null;
   first: ExtremeAt | null;
   last: ExtremeAt | null;
-}
-
-/** Round to one decimal (matches the AnswerBanner / chart label precision). */
-function round1(n: number): number {
-  return Math.round(n * 10) / 10;
 }
 
 /**
@@ -327,27 +319,6 @@ export async function generateSummary(
 
   const userPayload = buildPayload(spec, stats, originQuery, answer);
 
-  try {
-    const client = new Anthropic({ apiKey });
-    const message = await client.messages.create({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userPayload }],
-    });
-    const text = message.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map((b) => b.text)
-      .join(" ")
-      .replace(/\s+/g, " ")
-      .trim();
-    return text.length > 0 ? text : undefined;
-  } catch (error) {
-    // Summary is best-effort — log and fall back to no summary.
-    console.error(
-      "[summary] generation failed:",
-      error instanceof Error ? error.message : error,
-    );
-    return undefined;
-  }
+  // Summary is best-effort — a null (error/empty) falls back to no summary.
+  return (await runClaudeText(SYSTEM_PROMPT, userPayload, MAX_TOKENS, "summary")) ?? undefined;
 }

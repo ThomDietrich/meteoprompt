@@ -7,6 +7,7 @@ import {
   listPinned,
   updatePinnedLayouts,
 } from "@/lib/pinned";
+import { storeError } from "./store-error";
 
 // Global pinned cards (spec-05 §7). Reads/writes data/pinned.json at runtime —
 // force-dynamic so `next build` needs neither the file nor a DB.
@@ -22,9 +23,7 @@ export async function GET() {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("[api/pinned] list failed:", message);
-    return NextResponse.json({ error: "store_error", detail: message }, { status: 500 });
+    return storeError("[api/pinned] list failed:", error);
   }
 }
 
@@ -54,9 +53,7 @@ export async function POST(request: Request) {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("[api/pinned] add failed:", message);
-    return NextResponse.json({ error: "store_error", detail: message }, { status: 500 });
+    return storeError("[api/pinned] add failed:", error);
   }
 }
 
@@ -87,8 +84,6 @@ export async function PUT(request: Request) {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("[api/pinned] layout update failed:", message);
-    return NextResponse.json({ error: "store_error", detail: message }, { status: 500 });
+    return storeError("[api/pinned] layout update failed:", error);
   }
 }

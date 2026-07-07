@@ -7,6 +7,8 @@
  * Shared (no server-only dep): used client-side when building/regenerating cards.
  */
 
+import { shuffle } from "@/lib/utils";
+
 /** 11 tones from the three Wappen main colours (3 shades each) + 2 accents. */
 export const WAPPEN_PALETTE = [
   // Blau
@@ -40,11 +42,7 @@ export function pickDistinctColors(
   // If avoidance emptied the pool (asked to avoid everything), fall back to all.
   const source = pool.length >= Math.min(count, 1) ? pool : [...WAPPEN_PALETTE];
 
-  const shuffled = [...source];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
+  const shuffled = shuffle([...source]);
 
   const out: string[] = [];
   for (let i = 0; i < count; i++) {

@@ -1,8 +1,13 @@
 import "server-only";
 
-import Anthropic from "@anthropic-ai/sdk";
-
 import { getByKey } from "@/lib/catalog";
+import { runClaudeText } from "@/lib/claude-runtime";
+import {
+  dayKey,
+  round1,
+  TERMINAL_SORT,
+  TZ_PREAMBLE,
+} from "@/lib/flux-helpers";
 import { influxBucket, runFluxPoints } from "@/lib/influx";
 import { resolveKennwerte } from "@/lib/flux";
 
@@ -25,22 +30,12 @@ import { resolveKennwerte } from "@/lib/flux";
  * or advising. Called only by GET /api/overview (force-dynamic, runtime).
  */
 
-/** Same model + family as /api/ask and summary.ts (quality, spec decision 1). */
-const MODEL = "claude-sonnet-4-6";
-
 /** Hard cap so a runaway response can't blow past the ≤100-word target. */
 const MAX_TOKENS = 220;
 
 /** Days the per-day window spans; the still-running current day is dropped
  *  afterwards, leaving ~5 COMPLETE days. */
 const DAYS_BACK = 6;
-
-/** Timezone preamble — windows align to Europe/Berlin local day boundaries. */
-const TZ_PREAMBLE =
-  'import "timezone"\noption location = timezone.location(name: "Europe/Berlin")\n';
-
-/** Terminal sort — the repo convention for every time-series Flux query. */
-const TERMINAL_SORT = '|> sort(columns: ["_time"])';
 
 // ── 1) Stats (computed server-side over the last ~5 days) ───────────────────
 
@@ -65,22 +60,6 @@ export interface OverviewStats {
   days: DayStats[];
   /** A small set of current live readings (subset of the Kennwerte). */
   current: { label: string; value: number | null; unit: string }[];
-}
-
-/** Round to one decimal (matches the chart/label precision elsewhere). */
-function round1(n: number): number {
-  return Math.round(n * 10) / 10;
-}
-
-/**
- * Map a daily bucket's `_time` to its Europe/Berlin calendar date. We label
- * buckets at their `_start` (the day's local midnight), so converting that
- * instant in the container's Europe/Berlin TZ yields the day the bucket actually
- * covers. (Default `_stop` labelling would land on the NEXT local midnight and
- * shift every day forward by one.)
- */
-function dayKey(iso: string): string {
-  return new Date(iso).toLocaleDateString("sv-SE");
 }
 
 /** Run a TZ-aware daily aggregate for one entity over the last DAYS_BACK days. */
@@ -255,26 +234,6 @@ export async function generateOverview(): Promise<string | undefined> {
 
   const userPayload = buildPayload(stats);
 
-  try {
-    const client = new Anthropic({ apiKey });
-    const message = await client.messages.create({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userPayload }],
-    });
-    const text = message.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map((b) => b.text)
-      .join(" ")
-      .replace(/\s+/g, " ")
-      .trim();
-    return text.length > 0 ? text : undefined;
-  } catch (error) {
-    console.error(
-      "[overview] generation failed:",
-      error instanceof Error ? error.message : error,
-    );
-    return undefined;
-  }
+  // Best-effort — a null (error/empty) is silently omitted so values still render.
+  return (await runClaudeText(SYSTEM_PROMPT, userPayload, MAX_TOKENS, "overview")) ?? undefined;
 }

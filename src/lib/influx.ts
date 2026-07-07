@@ -2,6 +2,8 @@ import "server-only";
 
 import { InfluxDB, type QueryApi } from "@influxdata/influxdb-client";
 
+import type { SeriesPoint } from "@/lib/query-spec";
+
 /**
  * Server-only InfluxDB access. The read token must never reach the client,
  * so this module is guarded by `server-only` and reads from process.env.
@@ -10,8 +12,9 @@ import { InfluxDB, type QueryApi } from "@influxdata/influxdb-client";
  * (Iteration 1) into a reusable query runner used by flux.ts.
  */
 
-/** One time-series data point: ISO timestamp `t` and numeric value `v`. */
-export type SeriesPoint = { t: string; v: number };
+/** One time-series data point: ISO timestamp `t` and numeric value `v`. The
+ *  canonical type lives in query-spec; re-exported here for existing consumers. */
+export type { SeriesPoint };
 
 type InfluxEnv = {
   url: string;

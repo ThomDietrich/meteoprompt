@@ -36,14 +36,17 @@ ECharts 6 (`echarts-for-react`) · TanStack Table 8 (`@tanstack/react-virtual`) 
 `@influxdata/influxdb-client`. Node: aktuelle LTS (≥22, 24 empfohlen).
 
 ## Verifikations-Gate
-Beide müssen mit Exit 0 enden (= Erfolgsbedingung des Loops):
+Alle drei müssen mit Exit 0 enden (= Erfolgsbedingung des Loops):
 
 ```bash
 docker compose run --rm web npm run typecheck
 docker compose run --rm web npm run build
+docker compose run --rm web npm run test    # vitest — Unit-Tests der reinen Funktionen
 ```
 
-Build/Typecheck dürfen **keine** DB-Verbindung brauchen (Daten erst zur Laufzeit).
+Build/Typecheck/Test dürfen **keine** DB-Verbindung brauchen (Daten erst zur Laufzeit).
+Unit-Tests liegen unter `test/` (vitest); reine/algorithmische Funktionen sind dort
+abgedeckt (Schauer-Sessionisierung, Transforms, Sanitizer, Tageslänge, Katalog-Lookups …).
 
 ## Konventionen
 - Root-Meta-Dokumente GROSS (`README.md`, `AGENTS.md`).

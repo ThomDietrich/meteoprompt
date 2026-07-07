@@ -5,6 +5,8 @@
  * selection is stable per page load but varies across reloads.
  */
 
+import { shuffle } from "@/lib/utils";
+
 export const EXAMPLE_PROMPTS: string[] = [
   "Außentemperatur der letzten 4 Wochen",
   "Wie viel hat es diese Woche geregnet?",
@@ -26,11 +28,6 @@ export const EXAMPLE_PROMPTS: string[] = [
 
 /** N distinct example prompts in random order (clamped to the pool size). */
 export function pickExamples(n = 3): string[] {
-  const pool = [...EXAMPLE_PROMPTS];
-  // Fisher–Yates shuffle, then take the first n.
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
-  }
+  const pool = shuffle([...EXAMPLE_PROMPTS]);
   return pool.slice(0, Math.min(n, pool.length));
 }

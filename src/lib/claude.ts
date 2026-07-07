@@ -4,6 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 
 import { CATALOG, getByKey } from "@/lib/catalog";
 import { CHART_CATALOG } from "@/lib/chart-catalog";
+import { MODEL } from "@/lib/claude-runtime";
 import {
   AGGREGATIONS,
   ANSWER_KINDS,
@@ -32,9 +33,6 @@ import {
  * guaranteed valid JSON. The result is then validated against the catalog/enums
  * server-side — entityId is never taken from the model. See §6.
  */
-
-/** Model for tool-use (spec-02 §6: fast, cheap, strong tool-use). */
-const MODEL = "claude-sonnet-4-6";
 
 /**
  * Transforms the MODEL may request. `waterBalance` (spec-12) is deliberately EXCLUDED:
@@ -338,18 +336,20 @@ function asString(v: unknown): string | undefined {
   return typeof v === "string" && v.length > 0 ? v : undefined;
 }
 
+/** True when `v` is a string present in the readonly `enumVals` whitelist. */
+function inEnum(v: unknown, enumVals: readonly string[]): boolean {
+  return typeof v === "string" && enumVals.includes(v);
+}
+
 function validateAggregation(v: unknown): Aggregation {
-  if (typeof v === "string" && (AGGREGATIONS as readonly string[]).includes(v)) {
+  if (inEnum(v, AGGREGATIONS)) {
     return v as Aggregation;
   }
   throw new UnmappableQueryError("unmappable", `Invalid aggregation: ${String(v)}`);
 }
 
 function validateChartType(v: unknown): ChartType {
-  if (
-    typeof v === "string" &&
-    (IMPLEMENTED_CHART_TYPES as readonly string[]).includes(v)
-  ) {
+  if (inEnum(v, IMPLEMENTED_CHART_TYPES)) {
     return v as ChartType;
   }
   throw new UnmappableQueryError("unmappable", `Invalid chart type: ${String(v)}`);
@@ -363,7 +363,7 @@ function validateBinning(v: unknown): Binning | undefined {
 
 function validateRole(v: unknown): SeriesRole | undefined {
   if (v == null) return undefined;
-  if (typeof v === "string" && (SERIES_ROLES as readonly string[]).includes(v)) {
+  if (inEnum(v, SERIES_ROLES)) {
     return v as SeriesRole;
   }
   throw new UnmappableQueryError("unmappable", `Invalid series role: ${String(v)}`);
@@ -381,7 +381,7 @@ function validateTimeRange(v: unknown): TimeRange | undefined {
 function validateTransform(v: unknown): TransformName | undefined {
   // Only degree-day transforms are model-selectable (waterBalance is internal — see
   // MODEL_TRANSFORMS); reject anything else so the model can't smuggle waterBalance.
-  if (typeof v === "string" && (MODEL_TRANSFORMS as readonly string[]).includes(v)) {
+  if (inEnum(v, MODEL_TRANSFORMS)) {
     return v as TransformName;
   }
   return undefined;

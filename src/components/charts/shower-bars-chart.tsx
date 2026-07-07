@@ -6,6 +6,7 @@ import type { EChartsOption } from "echarts";
 import type EChartsReact from "echarts-for-react";
 
 import {
+  deDateTime,
   deNum,
   ECHARTS_OPTS,
   ECHARTS_STYLE,
@@ -19,19 +20,6 @@ import type { ResolvedSeries, ShowerEvent } from "@/lib/query-spec";
  * discrete, not evenly spaced in time). Bar height = totalMm. A CUSTOM tooltip
  * shows Start–Ende, Dauer, Summe und Spitzenrate, all DE-formatted.
  */
-
-/** Format an ISO instant as DD.MM.YYYY, HH:MM in Europe/Berlin (container TZ). */
-function deDateTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 /** Short axis label: DD.MM. HH:MM (year omitted to keep the tick compact). */
 function deAxisLabel(iso: string): string {

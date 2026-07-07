@@ -992,6 +992,29 @@ const RAIN_MONTH_ENTITY = "garten_ventus_w830_regen_monat";
 const CONNECTION_ENTITY = "garten_ventus_w830_verbindung";
 
 /**
+ * For every KENNWERTE def matching `pred`, map its catalog entityId → def and
+ * collect the entityIds. Map insertion order = KENNWERTE filter order (so the
+ * derived entityId list is identical to the inline loops it replaces); defs whose
+ * key isn't in the catalog are skipped, same as before.
+ */
+function entityDefsFor(pred: (k: (typeof KENNWERTE)[number]) => unknown): {
+  byEntity: Map<string, (typeof KENNWERTE)[number]>;
+  entityIds: string[];
+} {
+  const byEntity = new Map<string, (typeof KENNWERTE)[number]>();
+  for (const def of KENNWERTE.filter(pred)) {
+    const cat = getByKey(def.key);
+    if (cat) byEntity.set(cat.entityId, def);
+  }
+  return { byEntity, entityIds: [...byEntity.keys()] };
+}
+
+/** Anchored OR-regex (`^id$|^id$…`) for an `entity_id =~` whitelist filter. */
+function whitelistRegex(ids: string[]): string {
+  return ids.map((e) => `^${e}$`).join("|");
+}
+
+/**
  * Resolve the 18 Kennwerte: one `last()`-per-entity query for the "latest"
  * metrics (whitelist of catalog entityIds), a daily-max query for "Regen heute"
  * (today's accumulator), plus two today-scoped min()/max() queries that feed the
@@ -1002,16 +1025,10 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
   const bucket = influxBucket();
 
   // Whitelist of entityIds for the "latest" metrics (resolved via catalog).
-  const latestDefs = KENNWERTE.filter((k) => k.aggregation === "latest");
-  const entityToDef = new Map<string, (typeof KENNWERTE)[number]>();
-  for (const def of latestDefs) {
-    const cat = getByKey(def.key);
-    if (cat) entityToDef.set(cat.entityId, def);
-  }
-  const entityIds = [...entityToDef.keys()];
+  const { entityIds } = entityDefsFor((k) => k.aggregation === "latest");
 
   // ONE Flux query: last() per entity over the whitelist (regex on entity_id).
-  const orRegex = entityIds.map((e) => `^${e}$`).join("|");
+  const orRegex = whitelistRegex(entityIds);
   const latestFlux = `${TZ_PREAMBLE}from(bucket: "${bucket}")
   |> range(start: -6h)
   |> filter(fn: (r) => r["_field"] == "value")
@@ -1038,14 +1055,8 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
   // Two today-scoped queries (min, max) over that whitelist. group BEFORE the
   // aggregation (per entity_id) to bridge the storage-shard boundary — same as
   // rainToday; otherwise a metric split across shards yields one row per shard.
-  const secondaryDefs = KENNWERTE.filter((k) => k.secondary);
-  const secEntityToDef = new Map<string, (typeof KENNWERTE)[number]>();
-  for (const def of secondaryDefs) {
-    const cat = getByKey(def.key);
-    if (cat) secEntityToDef.set(cat.entityId, def);
-  }
-  const secEntityIds = [...secEntityToDef.keys()];
-  const secRegex = secEntityIds.map((e) => `^${e}$`).join("|");
+  const { entityIds: secEntityIds } = entityDefsFor((k) => k.secondary);
+  const secRegex = whitelistRegex(secEntityIds);
   const secBase = `${TZ_PREAMBLE}from(bucket: "${bucket}")
   |> range(start: today())
   |> filter(fn: (r) => r["_field"] == "value")
@@ -1066,18 +1077,14 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
 
   // Gauge KPIs (e.g. trockenperiode): slowly/on-change-updating counters whose last
   // write can be >6h old → last() over a WIDE (-3d) window so the value is present.
-  const gaugeDefs = KENNWERTE.filter((k) => k.aggregation === "gauge");
-  const gaugeEntityToDef = new Map<string, (typeof KENNWERTE)[number]>();
-  for (const def of gaugeDefs) {
-    const cat = getByKey(def.key);
-    if (cat) gaugeEntityToDef.set(cat.entityId, def);
-  }
-  const gaugeEntityIds = [...gaugeEntityToDef.keys()];
+  const { entityIds: gaugeEntityIds } = entityDefsFor(
+    (k) => k.aggregation === "gauge",
+  );
   const gaugeFlux = gaugeEntityIds.length
     ? `${TZ_PREAMBLE}from(bucket: "${bucket}")
   |> range(start: -3d)
   |> filter(fn: (r) => r["_field"] == "value")
-  |> filter(fn: (r) => r["entity_id"] =~ /${gaugeEntityIds.map((e) => `^${e}$`).join("|")}/)
+  |> filter(fn: (r) => r["entity_id"] =~ /${whitelistRegex(gaugeEntityIds)}/)
   |> group(columns: ["entity_id"])
   |> last()
   |> keep(columns: ["entity_id", "_time", "_value"])`
@@ -1086,18 +1093,14 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
   // todayTotal KPIs (e.g. sonnenscheindauer_tag): today-scoped max() of a daily
   // accumulator = the total so far today (like rainToday). group per entity bridges
   // the shard boundary.
-  const todayTotalDefs = KENNWERTE.filter((k) => k.aggregation === "todayTotal");
-  const ttEntityToDef = new Map<string, (typeof KENNWERTE)[number]>();
-  for (const def of todayTotalDefs) {
-    const cat = getByKey(def.key);
-    if (cat) ttEntityToDef.set(cat.entityId, def);
-  }
-  const ttEntityIds = [...ttEntityToDef.keys()];
+  const { entityIds: ttEntityIds } = entityDefsFor(
+    (k) => k.aggregation === "todayTotal",
+  );
   const todayTotalFlux = ttEntityIds.length
     ? `${TZ_PREAMBLE}from(bucket: "${bucket}")
   |> range(start: today())
   |> filter(fn: (r) => r["_field"] == "value")
-  |> filter(fn: (r) => r["entity_id"] =~ /${ttEntityIds.map((e) => `^${e}$`).join("|")}/)
+  |> filter(fn: (r) => r["entity_id"] =~ /${whitelistRegex(ttEntityIds)}/)
   |> group(columns: ["entity_id"])
   |> max()
   |> keep(columns: ["entity_id", "_time", "_value"])`

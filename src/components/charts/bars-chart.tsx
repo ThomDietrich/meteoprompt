@@ -5,7 +5,12 @@ import ReactECharts from "echarts-for-react";
 import type { EChartsOption } from "echarts";
 import type EChartsReact from "echarts-for-react";
 
-import { seriesColor, timeAxisTooltip } from "@/components/charts/chart-base";
+import {
+  ECHARTS_OPTS,
+  ECHARTS_STYLE,
+  seriesColor,
+  timeAxisTooltip,
+} from "@/components/charts/chart-base";
 import type { ResolvedSeries } from "@/lib/query-spec";
 
 /**
@@ -47,8 +52,8 @@ export const BarsChart = forwardRef<EChartsReact, { series: ResolvedSeries[] }>(
         ref={ref}
         option={buildOption(series)}
         notMerge
-        style={{ height: "100%", width: "100%" }}
-        opts={{ renderer: "canvas" }}
+        style={ECHARTS_STYLE}
+        opts={ECHARTS_OPTS}
       />
     );
   },

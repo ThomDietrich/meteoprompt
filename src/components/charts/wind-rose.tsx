@@ -5,6 +5,7 @@ import ReactECharts from "echarts-for-react";
 import type { EChartsOption } from "echarts";
 import type EChartsReact from "echarts-for-react";
 
+import { ECHARTS_OPTS, ECHARTS_STYLE } from "@/components/charts/chart-base";
 import type { ResolvedSeries } from "@/lib/query-spec";
 
 /**
@@ -131,8 +132,8 @@ export const WindRose = forwardRef<EChartsReact, { series: ResolvedSeries[] }>(
         ref={ref}
         option={option}
         notMerge
-        style={{ height: "100%", width: "100%" }}
-        opts={{ renderer: "canvas" }}
+        style={ECHARTS_STYLE}
+        opts={ECHARTS_OPTS}
       />
     );
   },
