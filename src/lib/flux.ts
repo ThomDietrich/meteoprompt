@@ -1123,6 +1123,28 @@ function ddmm(iso: string | null | undefined): string {
     : d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
 }
 
+// Reference-station latitude (Riethnordhausen) for the astronomical day length used
+// by the "Sonnenstunden % des Möglichen" secondary. Day LENGTH is longitude-independent,
+// so latitude alone suffices. (Could become deployment env config later.)
+const STATION_LAT_DEG = 51.08183;
+
+/**
+ * Astronomical day length (sunrise→sunset) in hours for a latitude + date. Simple
+ * solar-declination model — accurate to a few minutes, enough for a "% of possible
+ * sunshine" estimate. Clamps the hour angle for polar day/night → [0, 24] h.
+ */
+function dayLengthHours(latDeg: number, date: Date): number {
+  const yearStart = new Date(date.getFullYear(), 0, 0);
+  const dayOfYear = Math.floor(
+    (date.getTime() - yearStart.getTime()) / 86_400_000,
+  );
+  const decl = 0.4093 * Math.sin(((2 * Math.PI) / 365) * (dayOfYear - 81));
+  const latRad = (latDeg * Math.PI) / 180;
+  const cosH = -Math.tan(latRad) * Math.tan(decl);
+  const H = Math.acos(Math.max(-1, Math.min(1, cosH))); // sunrise hour angle (rad)
+  return (2 * H * 180) / Math.PI / 15;
+}
+
 // Station-computed "last rain shower" series (NOT in the catalog — event values,
 // not chartable). Amount + duration are numeric; begin/end are ISO `_field=="state"`.
 const SHOWER_AMOUNT_ENTITY = "garten_ventus_w830_regen_letzter_schauer";
@@ -1371,6 +1393,10 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
     };
   }
 
+  // Astronomical day length for today (for the "Sonnenstunden % des Möglichen"
+  // secondary). Container TZ is Europe/Berlin, so new Date() is the local day.
+  const dayLengthH = dayLengthHours(STATION_LAT_DEG, new Date());
+
   // Assemble in KENNWERTE order.
   return KENNWERTE.map((def): KennwertValue => {
     const cat = getByKey(def.key);
@@ -1393,7 +1419,26 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
 
     if (def.aggregation === "todayTotal") {
       const tt = cat ? todayTotalByEntity.get(cat.entityId) : undefined;
-      return { key: def.key, label: def.label, unit, value: tt?.v ?? null, t: tt?.t ?? null };
+      const value = tt?.v ?? null;
+      let secondary: string | undefined;
+      let secondaryTitle: string | undefined;
+      if (def.secondary === "sunshinePct" && value != null && dayLengthH > 0) {
+        const pct = Math.min(100, Math.round((value / dayLengthH) * 100));
+        secondary = `${pct} % des Möglichen`;
+        secondaryTitle = `Tageslänge heute ≈ ${dayLengthH.toLocaleString("de-DE", {
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1,
+        })} h`;
+      }
+      return {
+        key: def.key,
+        label: def.label,
+        unit,
+        value,
+        t: tt?.t ?? null,
+        ...(secondary ? { secondary } : {}),
+        ...(secondaryTitle ? { secondaryTitle } : {}),
+      };
     }
 
     if (def.aggregation === "lastShower") {
@@ -1402,12 +1447,17 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
       const begin = showerStateByEntity.get(SHOWER_BEGIN_ENTITY)?.s;
       const end = showerStateByEntity.get(SHOWER_END_ENTITY)?.s;
       // Secondary: the shower window "05.07. 15:40–21:55"; duration in the tooltip.
+      // A momentary shower (begin == end) shows a single time, not "19:15–19:15".
       let secondary: string | undefined;
       if (begin && end) {
-        secondary =
-          ddmm(begin) === ddmm(end)
-            ? `${ddmm(begin)} ${hhmm(begin)}–${hhmm(end)}`
-            : `${ddmm(begin)} ${hhmm(begin)} – ${ddmm(end)} ${hhmm(end)}`;
+        const sameDay = ddmm(begin) === ddmm(end);
+        if (sameDay && hhmm(begin) === hhmm(end)) {
+          secondary = `${ddmm(begin)} ${hhmm(begin)}`;
+        } else if (sameDay) {
+          secondary = `${ddmm(begin)} ${hhmm(begin)}–${hhmm(end)}`;
+        } else {
+          secondary = `${ddmm(begin)} ${hhmm(begin)} – ${ddmm(end)} ${hhmm(end)}`;
+        }
       }
       const durationTitle =
         durMin != null

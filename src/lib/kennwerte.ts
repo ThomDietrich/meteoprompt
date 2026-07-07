@@ -34,7 +34,11 @@ export type KennwertAggregation =
  * day (Europe/Berlin). Server-resolved and pre-formatted into the `secondary`
  * string; absent on cells without a secondary.
  */
-export type KennwertSecondary = "todayMinMax" | "todayMax" | "steadiness";
+export type KennwertSecondary =
+  | "todayMinMax"
+  | "todayMax"
+  | "steadiness"
+  | "sunshinePct"; // sunshine so far today as % of the astronomical day length
 
 export interface KennwertDef {
   key: string; // catalog key
@@ -61,7 +65,7 @@ export const KENNWERTE: KennwertDef[] = [
   { key: "last_shower", label: "Letzter Schauer", icon: "CloudRainWind", aggregation: "lastShower" },
   { key: "pressure", label: "Luftdruck", icon: "Gauge", aggregation: "latest", secondary: "todayMinMax" },
   { key: "solar_radiation", label: "Sonne", icon: "Sun", aggregation: "latest", secondary: "todayMax" },
-  { key: "sunshine_duration", label: "Sonnenstunden", icon: "SunDim", aggregation: "todayTotal" },
+  { key: "sunshine_duration", label: "Sonnenstunden", icon: "SunDim", aggregation: "todayTotal", secondary: "sunshinePct" },
   { key: "uv_index", label: "UV", icon: "SunMedium", aggregation: "latest", secondary: "todayMax" },
 ];
 
