@@ -10,6 +10,7 @@ import { InfluxDB, type QueryApi } from "@influxdata/influxdb-client";
  * (Iteration 1) into a reusable query runner used by flux.ts.
  */
 
+/** One time-series data point: ISO timestamp `t` and numeric value `v`. */
 export type SeriesPoint = { t: string; v: number };
 
 type InfluxEnv = {
@@ -87,6 +88,7 @@ export async function runFluxPoints(flux: string): Promise<SeriesPoint[]> {
   return points;
 }
 
+/** One numeric row keyed by entity: entity_id, ISO timestamp `t`, numeric value `v`. */
 export type EntityRow = { entityId: string; t: string; v: number };
 
 /**

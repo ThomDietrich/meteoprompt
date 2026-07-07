@@ -2,8 +2,7 @@ import type { SeriesPoint, ShowerEvent } from "@/lib/query-spec";
 
 /**
  * spec-07 — rain-event ("shower") sessionization. PURE + unit-testable: no DB,
- * no server-only dependency, so it can run in both /api/ask and /api/chart and
- * be exercised by a standalone self-check.
+ * no server-only dependency, so it can run in both /api/ask and /api/chart.
  *
  * Input: the rain accumulator's WET INCREMENTS — `{ t, v }` where `v` is the
  * positive mm added since the previous reading (the Flux side already does
@@ -21,10 +20,11 @@ export const SHOWER_MIT_HOURS = 4;
 const MS_PER_HOUR = 3_600_000;
 
 /**
- * Floor for the per-interval gap when deriving a rain RATE (~5-min station archive
- * interval). Home Assistant over-samples the accumulator, so two wet increments can
- * land microseconds apart; without this clamp `mm ÷ tinyGap` blows the peak rate up
- * to absurd values (e.g. 34 000 mm/h). Matches the catalog dedup window ("5m").
+ * Floor for the per-interval gap when deriving a rain RATE, set to the ~5-min
+ * station archive interval. Guards against an unusually short gap between two
+ * consecutive readings: without this clamp `mm ÷ tinyGap` would blow the peak rate
+ * up to absurd values (e.g. 34 000 mm/h). The station writes one record per ~5-min
+ * archive interval, so that is the shortest gap a real reading pair should show.
  */
 const MIN_INTERVAL_H = 5 / 60;
 
@@ -101,8 +101,8 @@ export function groupShowers(
       open = true;
     } else {
       // In-event interval: convert this increment to a rate (mm/h). Clamp the gap
-      // to the archive interval so HA's near-simultaneous duplicate writes (tiny
-      // dt) can't inflate the rate to absurd values.
+      // to the ~5-min archive interval so an unusually short gap between two
+      // readings (tiny dt) can't inflate the rate to absurd values.
       const gapH = Math.max((p.ms - prevMs) / MS_PER_HOUR, MIN_INTERVAL_H);
       const rate = p.v / gapH;
       if (rate > peakRate) peakRate = rate;

@@ -18,6 +18,7 @@ import type { ChartSpec } from "@/lib/query-spec";
 
 const STORAGE_KEY = "meteoprompt:cards:v1";
 
+/** Grid placement of a card: column/row origin (x/y) and width/height in grid units. */
 export interface CardLayout {
   x: number;
   y: number;
@@ -25,6 +26,7 @@ export interface CardLayout {
   h: number;
 }
 
+/** A persisted dashboard card: its spec, the originating query, and its grid layout. */
 export interface StoredCard {
   id: string;
   spec: ChartSpec;

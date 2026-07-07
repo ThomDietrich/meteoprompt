@@ -27,10 +27,11 @@ import {
 /**
  * Claude (Anthropic SDK) → structured QuerySpec via forced tool use (server-only).
  *
- * The model gets ONE tool `emit_query_spec` whose input_schema is the v2 subset of
- * QuerySpec (chart ∈ {line,bars,windrose}, source.kind = 'metric'). tool_choice
- * forces the call → guaranteed valid JSON. The result is then validated against the
- * catalog/enums server-side — entityId is never taken from the model. See §6.
+ * The model gets ONE tool `emit_query_spec` whose input_schema now exposes the full
+ * implemented surface: every IMPLEMENTED_CHART_TYPES chart plus `derived` (degree-day/
+ * water-balance) sources and computed `answer`s. tool_choice forces the call →
+ * guaranteed valid JSON. The result is then validated against the catalog/enums
+ * server-side — entityId is never taken from the model. See §6.
  */
 
 /** Model for tool-use (spec-02 §6: fast, cheap, strong tool-use). */
@@ -41,7 +42,6 @@ const MODEL = "claude-sonnet-4-6";
  * representative German message (spec-03 §7). `unmappable` is the fallback.
  */
 export type UnmappableReason =
-  | "record" // record/extreme/aggregate ("wann war der kälteste …") — spec-05
   | "out_of_scope" // forecast/radar/external data we don't have
   | "unmappable"; // gibberish / off-topic / no catalog match
 
@@ -193,7 +193,7 @@ const QUERY_SPEC_TOOL: Anthropic.Tool = {
                     type: "string",
                     enum: [...SERIES_ROLES],
                     description:
-                      "'value' for normal series; windrose → 'direction' + 'magnitude'; scatter → 'x' + 'y'.",
+                      "'value' for normal series; windrose → 'direction' + 'magnitude'; scatter → 'x' + 'y'; range/aggregate series may use 'min' / 'mean' / 'max'.",
                   },
                   metric: {
                     type: "string",
@@ -511,7 +511,7 @@ function validateQuerySpec(input: unknown, query: string): QuerySpec {
   if (reason === "out_of_scope") {
     throw new UnmappableQueryError("out_of_scope", "Out-of-scope query");
   }
-  if (reason === "unmappable" || r.unmappable === true) {
+  if (reason === "unmappable") {
     throw new UnmappableQueryError("unmappable", "Unmappable query");
   }
 

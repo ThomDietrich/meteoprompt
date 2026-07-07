@@ -408,7 +408,7 @@ export default function DashboardGrid() {
         setPending(false);
       }
     },
-    [persist, cards, beginMutation],
+    [persist, beginMutation],
   );
 
   const handleRemove = useCallback(

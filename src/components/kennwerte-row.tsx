@@ -29,7 +29,7 @@ import {
 } from "@/lib/kennwerte";
 
 /**
- * Header Kennwert-Zeile: 12 live-value pills (icon + label + value/unit),
+ * Header Kennwert-Zeile: 18 live-value pills (icon + label + value/unit),
  * fetched from /api/now after mount, plus a data-grounded Wetterlage-Überblick
  * below them (fetched separately from /api/overview so the values appear
  * instantly while the text loads). Wraps responsively. See spec-03 §4, spec-06 E.

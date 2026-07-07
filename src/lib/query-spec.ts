@@ -1,9 +1,10 @@
 /**
  * QuerySpec — the structured query format Claude emits and the backend executes.
  *
- * These types are the **superset** (future-proof). Iteration 2 implements only the
- * marked v2 subset; later iterations add union branches / enum values / transforms
- * additively without changing the wire format. See docs/iterations spec-02 §4.
+ * These union types started as a future-proof **superset**; by now most branches
+ * (chart types, source kinds, transforms, answers) are actually implemented. The
+ * shape stays additive/forward-compatible — new branches / enum values / transforms
+ * can be added without changing the wire format. See docs/iterations spec-02 §4.
  *
  * Shared between client and server, so this module is intentionally free of any
  * server-only or Node dependency.
@@ -107,11 +108,6 @@ export const IMPLEMENTED_CHART_TYPES = [
   "table", // spec-06: rendered as a TanStack table (on explicit request / few values)
   "showerBars", // spec-07: one bar per rain event (in-app sessionized shower)
 ] as const;
-export type ImplementedChartType = (typeof IMPLEMENTED_CHART_TYPES)[number];
-
-/** Kept for compatibility with earlier iterations' references. */
-export const V2_CHART_TYPES = ["line", "bars", "windrose"] as const;
-export type V2ChartType = (typeof V2_CHART_TYPES)[number];
 
 export interface TimeRange {
   start: string; // e.g. '-28d' or absolute ISO
@@ -138,8 +134,7 @@ export type SeriesRole =
   // later / range types
   | "min"
   | "mean"
-  | "max"
-  | "comparison";
+  | "max";
 
 /** Discriminated union over "kind" — the central extension point. */
 export type Source =

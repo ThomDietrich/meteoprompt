@@ -10,8 +10,9 @@ import type { ResolvedSeries, ShapedData } from "@/lib/query-spec";
  * comma used in the UI). Columns are: a `time` column + one value column per
  * series, joined on the timestamp. Charts whose data lives in `shaped` (no
  * `points`) are flattened to the most meaningful per-row value(s) so a download
- * still carries data (e.g. candlestick → low/high columns). Triggers a browser
- * download named from the card title + range.
+ * still carries data (e.g. the `ohlc`/candlestick shape → open/high/low/close
+ * columns, the `band`/rangeBand shape → low/high). Triggers a browser download
+ * named from the card title + range.
  */
 
 /** RFC-4180-ish field escaping: quote when the field has a comma/quote/newline. */

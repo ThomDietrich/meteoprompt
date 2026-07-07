@@ -2,7 +2,7 @@ import { WAPPEN_PALETTE } from "@/lib/colors";
 import type { Aggregation, ChartSpec, Series } from "@/lib/query-spec";
 
 /**
- * The permanent "Stations-Dashboard" (spec-07): the 16 predefined ChartSpecs are
+ * The permanent "Stations-Dashboard" (spec-07): the 20 predefined ChartSpecs are
  * organised into 5 thematic GROUP cards. Each group card renders its charts in a
  * responsive sub-grid, with a short STATIC German caption under every graph
  * (`PermanentDashboard`). A broad mix of chart types — rangeBand, bars, line/area,
@@ -11,8 +11,8 @@ import type { Aggregation, ChartSpec, Series } from "@/lib/query-spec";
  * colours are only for user cards; these stay stable. Resolved through the
  * existing /api/chart path (no Claude).
  *
- * spec-07 coverage changes vs. spec-04: REMOVED Regenrate (24h); ADDED Monatsregen
- * (12 Monate), Behaglichkeit (7 T), UV-Index (7 T) und Regen pro Schauer (90 T).
+ * spec-12 additions: Tageshoch & -tief (30 T), Wasserbilanz (Regen − Verdunstung,
+ * 90 T), Sonnenstunden/Tag (30 T) und Stärkste Böen je Tag (30 T).
  */
 
 // Curated palette shortcuts (Wappen tones).
@@ -358,11 +358,3 @@ export const PERMANENT_GROUPS: PermanentGroup[] = [
     ],
   },
 ];
-
-/**
- * Flat list of the permanent ChartSpecs, DERIVED from the groups (preserved for
- * any caller that wants the specs without grouping; the dashboard renders groups).
- */
-export const PERMANENT_CHARTS: ChartSpec[] = PERMANENT_GROUPS.flatMap((g) =>
-  g.charts.map((c) => c.spec),
-);

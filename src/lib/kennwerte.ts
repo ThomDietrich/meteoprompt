@@ -1,5 +1,5 @@
 /**
- * The 12 Kennwerte (live values) shown in the header pill row (spec-03 §4).
+ * The 18 Kennwerte (live values) shown in the header pill row (spec-03 §4).
  *
  * Shared between the server route (which keys/units it resolves) and the client
  * row (labels + icon names). Icon names map to lucide-react components on the
@@ -98,6 +98,7 @@ export interface KennwertValue {
   t: string | null; // ISO timestamp of the reading
 }
 
+/** Response shape for GET /api/now — the resolved live Kennwerte values. */
 export interface NowResponse {
   values: KennwertValue[];
 }

@@ -150,27 +150,9 @@ export const CATALOG: CatalogEntry[] = [
 
 const BY_KEY = new Map<string, CatalogEntry>(CATALOG.map((e) => [e.key, e]));
 
-const BY_SYNONYM = new Map<string, CatalogEntry>();
-for (const e of CATALOG) {
-  // The key and the German label also count as lookup tokens.
-  BY_SYNONYM.set(e.key.toLowerCase(), e);
-  BY_SYNONYM.set(e.labelDe.toLowerCase(), e);
-  for (const syn of e.synonyms) BY_SYNONYM.set(syn.toLowerCase(), e);
-}
-
 /** Look up a catalog entry by its canonical key. */
 export function getByKey(key: string): CatalogEntry | undefined {
   return BY_KEY.get(key);
-}
-
-/** Look up a catalog entry by an exact synonym / key / label (case-insensitive). */
-export function getBySynonym(token: string): CatalogEntry | undefined {
-  return BY_SYNONYM.get(token.trim().toLowerCase());
-}
-
-/** All catalog keys (whitelist for validating Claude output). */
-export function catalogKeys(): string[] {
-  return [...BY_KEY.keys()];
 }
 
 /** 8-point German compass abbreviations, clockwise from North. */

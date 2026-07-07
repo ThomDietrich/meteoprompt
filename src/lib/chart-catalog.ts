@@ -128,10 +128,6 @@ const BY_CHART = new Map<ChartType, ChartCatalogEntry>(
   CHART_CATALOG.map((e) => [e.chart, e]),
 );
 
-export function chartCatalogEntry(chart: ChartType): ChartCatalogEntry | undefined {
-  return BY_CHART.get(chart);
-}
-
 /**
  * Validate that a chart type's data-shape requirement is satisfiable by the
  * given series count + roles. Returns null if OK, or a human-readable reason.

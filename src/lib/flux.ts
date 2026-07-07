@@ -31,7 +31,11 @@ import type {
   TimeRange,
 } from "@/lib/query-spec";
 
-/** Raised when a chart type can't be satisfied by the requested series shape. */
+/**
+ * Raised when a spec can't be resolved into data: a chart type not satisfiable by
+ * the requested series shape, an unknown transform, a missing rain series, or an
+ * unknown answer metric.
+ */
 export class ChartShapeError extends Error {
   constructor(message: string) {
     super(message);
@@ -732,7 +736,6 @@ async function resolveComparison(
 
 type SeriesCat = { series: Series; cat: CatalogEntry };
 
-/** Build a base ResolvedSeries (metadata + colour), points filled by callers. */
 /**
  * Sort points by time ASCENDING (defensive). Some Flux aggregates over long,
  * multi-shard ranges can return rows out of chronological order; an unsorted
@@ -743,6 +746,7 @@ function sortByTime(points: SeriesPoint[]): SeriesPoint[] {
   return [...points].sort((a, b) => a.t.localeCompare(b.t));
 }
 
+/** Build a base ResolvedSeries (metadata + colour), points filled by callers. */
 function baseSeries(
   sc: SeriesCat,
   points: SeriesPoint[] = [],
@@ -1159,7 +1163,7 @@ const RAIN_MONTH_ENTITY = "garten_ventus_w830_regen_monat";
 const CONNECTION_ENTITY = "garten_ventus_w830_verbindung";
 
 /**
- * Resolve the 12 Kennwerte: one `last()`-per-entity query for the "latest"
+ * Resolve the 18 Kennwerte: one `last()`-per-entity query for the "latest"
  * metrics (whitelist of catalog entityIds), a daily-max query for "Regen heute"
  * (today's accumulator), plus two today-scoped min()/max() queries that feed the
  * muted "secondary" line (today low/high or peak — spec-09 A). All run in ONE
