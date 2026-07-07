@@ -10,7 +10,6 @@ import {
   COUNT_OPS,
   IMPLEMENTED_CHART_TYPES,
   SERIES_ROLES,
-  TRANSFORM_NAMES,
   type Aggregation,
   type Answer,
   type Binning,
@@ -28,14 +27,23 @@ import {
  * Claude (Anthropic SDK) → structured QuerySpec via forced tool use (server-only).
  *
  * The model gets ONE tool `emit_query_spec` whose input_schema now exposes the full
- * implemented surface: every IMPLEMENTED_CHART_TYPES chart plus `derived` (degree-day/
- * water-balance) sources and computed `answer`s. tool_choice forces the call →
+ * implemented surface: every IMPLEMENTED_CHART_TYPES chart plus `derived` (degree-day)
+ * sources and computed `answer`s. tool_choice forces the call →
  * guaranteed valid JSON. The result is then validated against the catalog/enums
  * server-side — entityId is never taken from the model. See §6.
  */
 
 /** Model for tool-use (spec-02 §6: fast, cheap, strong tool-use). */
 const MODEL = "claude-sonnet-4-6";
+
+/**
+ * Transforms the MODEL may request. `waterBalance` (spec-12) is deliberately EXCLUDED:
+ * it's a two-input transform wired only into the permanent dashboard, and
+ * `resolveWaterBalance` ignores `source.inputs` — letting the model pick it for an
+ * arbitrary metric would return a mismatched rain−ET series under a wrong title. So the
+ * model sees degree-days only; `waterBalance` stays internal.
+ */
+const MODEL_TRANSFORMS = ["gdd", "hdd", "cdd"] as const;
 
 /**
  * Why a query couldn't be answered as a chart. The route maps each to a
@@ -213,7 +221,7 @@ const QUERY_SPEC_TOOL: Anthropic.Tool = {
                   },
                   transform: {
                     type: "string",
-                    enum: [...TRANSFORM_NAMES],
+                    enum: [...MODEL_TRANSFORMS],
                     description:
                       "DERIVED degree-day series: 'gdd' (Wachstumsgradtage), 'hdd' (Heizgradtage), 'cdd' (Kühlgradtage). Use the metric 'outdoor_temperature' as input; set base if the user gives one (GDD base 10, HDD/CDD base 18 by default).",
                   },
@@ -371,7 +379,9 @@ function validateTimeRange(v: unknown): TimeRange | undefined {
 }
 
 function validateTransform(v: unknown): TransformName | undefined {
-  if (typeof v === "string" && (TRANSFORM_NAMES as readonly string[]).includes(v)) {
+  // Only degree-day transforms are model-selectable (waterBalance is internal — see
+  // MODEL_TRANSFORMS); reject anything else so the model can't smuggle waterBalance.
+  if (typeof v === "string" && (MODEL_TRANSFORMS as readonly string[]).includes(v)) {
     return v as TransformName;
   }
   return undefined;

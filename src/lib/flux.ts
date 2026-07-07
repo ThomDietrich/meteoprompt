@@ -662,10 +662,13 @@ async function resolveWaterBalance(
   ${TERMINAL_SORT}`;
 
   // Daily ET totals: dedup HA-oversampling at the 5-min archive interval, then sum.
+  // group(entity_id) BEFORE the windows bridges the storage-shard boundary (same as
+  // rainFlux) so a day straddling a shard isn't split into two partial-sum rows.
   const etFlux = `${TZ_PREAMBLE}from(bucket: "${bucket}")
   |> range(start: ${start}, stop: ${stop})
   |> filter(fn: (r) => r["entity_id"] == "${ET_INTERVAL_ENTITY}")
   |> filter(fn: (r) => r["_field"] == "value")
+  |> group(columns: ["entity_id"])
   |> aggregateWindow(every: 5m, fn: last, createEmpty: false)
   |> aggregateWindow(every: ${window}, fn: sum, createEmpty: false${timeSrcClause(window)})
   ${TERMINAL_SORT}`;
@@ -1033,7 +1036,8 @@ export async function resolveAnswer(
           ? `Tiefstwert ${cat.labelDe}`
           : `Höchstwert ${cat.labelDe}`,
       unit: cat.unit,
-      value: hit ? hit.v : null,
+      // Round to 1 decimal for parity with the fast/scalar extreme paths.
+      value: hit ? Math.round(hit.v * 10) / 10 : null,
       t: hit ? hit.t : null,
     };
   }
