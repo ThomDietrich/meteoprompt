@@ -1152,6 +1152,12 @@ const SHOWER_DURATION_ENTITY = "garten_ventus_w830_regen_schauerdauer";
 const SHOWER_BEGIN_ENTITY = "garten_ventus_w830_regen_schauerbeginn";
 const SHOWER_END_ENTITY = "garten_ventus_w830_regen_schauerende";
 
+// Station's own week/month rain accumulators (correct local boundaries) and the
+// connectivity binary_sensor (on/off state). Bespoke — not in the metric catalog.
+const RAIN_WEEK_ENTITY = "garten_ventus_w830_regen_woche";
+const RAIN_MONTH_ENTITY = "garten_ventus_w830_regen_monat";
+const CONNECTION_ENTITY = "garten_ventus_w830_verbindung";
+
 /**
  * Resolve the 12 Kennwerte: one `last()`-per-entity query for the "latest"
  * metrics (whitelist of catalog entityIds), a daily-max query for "Regen heute"
@@ -1286,6 +1292,32 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
   |> keep(columns: ["entity_id", "_time", "_value"])`
     : null;
 
+  // Regen Woche/Monat: the station's own week/month accumulators (correct local
+  // boundaries). Wide -45d window since these only update on rain.
+  const hasRainPeriod = KENNWERTE.some(
+    (k) => k.aggregation === "rainWeek" || k.aggregation === "rainMonth",
+  );
+  const rainPeriodFlux = hasRainPeriod
+    ? `${TZ_PREAMBLE}from(bucket: "${bucket}")
+  |> range(start: -45d)
+  |> filter(fn: (r) => r["_field"] == "value")
+  |> filter(fn: (r) => r["entity_id"] == "${RAIN_WEEK_ENTITY}" or r["entity_id"] == "${RAIN_MONTH_ENTITY}")
+  |> group(columns: ["entity_id"])
+  |> last()
+  |> keep(columns: ["entity_id", "_time", "_value"])`
+    : null;
+
+  // Station connectivity (verbindung, on/off `_field == "state"`).
+  const hasConnection = KENNWERTE.some((k) => k.aggregation === "connection");
+  const connectionFlux = hasConnection
+    ? `${TZ_PREAMBLE}from(bucket: "${bucket}")
+  |> range(start: -3d)
+  |> filter(fn: (r) => r["_field"] == "state")
+  |> filter(fn: (r) => r["entity_id"] == "${CONNECTION_ENTITY}")
+  |> last()
+  |> keep(columns: ["entity_id", "_time", "_value"])`
+    : null;
+
   // Wind-direction steadiness (spec-10): two today-scoped scalars — the mean of
   // cos(θ) and sin(θ) over the raw directions. The resultant length
   // r = √(mc²+ms²) is the directional constancy (0 = constantly shifting,
@@ -1315,6 +1347,8 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
     todayTotalRows,
     showerNumRows,
     showerStateRows,
+    rainPeriodRows,
+    connectionRows,
   ] = await Promise.all([
     runFluxEntityRows(latestFlux),
     rainFlux ? runFluxPoints(rainFlux) : Promise.resolve([]),
@@ -1328,6 +1362,10 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
     showerStateFlux
       ? runFluxEntityStateRows(showerStateFlux)
       : Promise.resolve([]),
+    rainPeriodFlux ? runFluxEntityRows(rainPeriodFlux) : Promise.resolve([]),
+    connectionFlux
+      ? runFluxEntityStateRows(connectionFlux)
+      : Promise.resolve([]),
   ]);
 
   const latestByEntity = new Map(latestRows.map((r) => [r.entityId, r]));
@@ -1339,6 +1377,11 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
   const showerStateByEntity = new Map(
     showerStateRows.map((r) => [r.entityId, r]),
   );
+  const rainPeriodByEntity = new Map(
+    rainPeriodRows.map((r) => [r.entityId, r]),
+  );
+  const connectionState = connectionRows[0]?.s;
+  const connectionTime = connectionRows[0]?.t ?? null;
 
   const rainTodayValue = rainPoints.length > 0 ? rainPoints[0].v : null;
   const rainTodayTime = rainPoints.length > 0 ? rainPoints[0].t : null;
@@ -1474,6 +1517,29 @@ export async function resolveKennwerte(): Promise<KennwertValue[]> {
         t: amount?.t ?? null,
         ...(secondary ? { secondary } : {}),
         ...(durationTitle ? { secondaryTitle: durationTitle } : {}),
+      };
+    }
+
+    if (def.aggregation === "rainWeek") {
+      const r = rainPeriodByEntity.get(RAIN_WEEK_ENTITY);
+      return { key: def.key, label: def.label, unit: "mm", value: r?.v ?? null, t: r?.t ?? null };
+    }
+
+    if (def.aggregation === "rainMonth") {
+      const r = rainPeriodByEntity.get(RAIN_MONTH_ENTITY);
+      return { key: def.key, label: def.label, unit: "mm", value: r?.v ?? null, t: r?.t ?? null };
+    }
+
+    if (def.aggregation === "connection") {
+      const online = connectionState === "on";
+      return {
+        key: def.key,
+        label: def.label,
+        unit: "",
+        value: null,
+        t: connectionTime,
+        text: connectionState == null ? "—" : online ? "Online" : "Offline",
+        ...(connectionState == null ? {} : { ok: online }),
       };
     }
 

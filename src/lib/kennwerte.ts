@@ -19,13 +19,20 @@
  *   the value, plus begin/end (`regen_schauerbeginn/-ende`, ISO `_field == "state"`) and
  *   duration (`regen_schauerdauer`, min) formatted into the secondary line. Bespoke —
  *   these entities are NOT in the metric catalog (event values, not chartable series).
+ * - `rainWeek` / `rainMonth` — rain since the start of the local calendar week / month,
+ *   from the robust `regen_tag` accumulator (difference+sum over the truncated range).
+ * - `connection` — station connectivity (`verbindung`, on/off `_field == "state"`) as a
+ *   text status ("Online"/"Offline"), not a number.
  */
 export type KennwertAggregation =
   | "latest"
   | "rainToday"
   | "gauge"
   | "todayTotal"
-  | "lastShower";
+  | "lastShower"
+  | "rainWeek"
+  | "rainMonth"
+  | "connection";
 
 /**
  * Today's secondary context shown under a Kennwert: today's low/high
@@ -63,10 +70,13 @@ export const KENNWERTE: KennwertDef[] = [
   { key: "rain_rate", label: "Regenrate", icon: "CloudDrizzle", aggregation: "latest" },
   { key: "dry_spell", label: "Trockenperiode", icon: "CalendarOff", aggregation: "gauge" },
   { key: "last_shower", label: "Letzter Schauer", icon: "CloudRainWind", aggregation: "lastShower" },
+  { key: "rain_week", label: "Regen (Woche)", icon: "Umbrella", aggregation: "rainWeek" },
+  { key: "rain_month", label: "Regen (Monat)", icon: "Umbrella", aggregation: "rainMonth" },
   { key: "pressure", label: "Luftdruck", icon: "Gauge", aggregation: "latest", secondary: "todayMinMax" },
   { key: "solar_radiation", label: "Sonne", icon: "Sun", aggregation: "latest", secondary: "todayMax" },
   { key: "sunshine_duration", label: "Sonnenstunden", icon: "SunDim", aggregation: "todayTotal", secondary: "sunshinePct" },
   { key: "uv_index", label: "UV", icon: "SunMedium", aggregation: "latest", secondary: "todayMax" },
+  { key: "connection", label: "Station", icon: "Antenna", aggregation: "connection" },
 ];
 
 /** One resolved live value (server → client). */
@@ -77,6 +87,10 @@ export interface KennwertValue {
   value: number | null;
   /** Compass abbreviation for wind_direction; otherwise undefined. */
   compass?: string;
+  /** Text status shown INSTEAD of the numeric value (e.g. "Online"/"Offline"). */
+  text?: string;
+  /** Health flag for a `text` status: true → green, false → red/amber styling. */
+  ok?: boolean;
   /** Pre-formatted today low/high (or peak), e.g. "↓ 12 ↑ 24"; absent when N/A. */
   secondary?: string;
   /** Hover tooltip for the secondary (e.g. the times of today's low/high). */

@@ -145,6 +145,12 @@ neue Serie ihn **direkter, korrekter oder reicher** macht.
 heatmaps/boxplot/violin/radar/themeRiver/gauge/candlestick), Windrose (Client-Binning), Gradtage,
 Vergleichs-Overlay, adaptives Downsampling, Wetterlage-Narrativ.
 
+### Umsetzungsstand P1–P3 — ✅ vollständig (2026-07-07)
+- **P1:** Trockenperiode-KPI · Sonnenstunden-KPI+Karte · Wasserbilanz · Wind→m/s · Letzter-Schauer-KPI (+State-Feld-Lesepfad). Alle gebaut, Gate grün, live + Browser-e2e verifiziert.
+- **P2:** Sonnenschein-% (SunCalc, Tageslänge server-seitig) · Regen (Woche)/(Monat)-KPIs (native `regen_woche/-monat`, gegen `regen_tag` gegengeprüft: 30,2 ≈ 29,9 mm) · Tages-Extrema-Chart „Tageshoch & -tief" (`aussentemperatur_tagesmaximum/-minimum`, Katalog + Karte).
+- **P3:** Sturm-Log „Stärkste Böen je Tag" (`boengeschwindigkeit_tagesmaximum`, Extension 1.4.0 live) · Stations-Health-Pill „Station Online/Offline" (`verbindung`, State + `text`/`ok` an KennwertValue).
+- **Bewusst ausgelassen (begründet):** Wind-Kompass-Enum (`degreesToCompass` liefert dasselbe — reine Redundanz); `evapotranspiration_intervall` im generischen Katalog (historisch ~29× überabgetastet → Summen-Falle; wird nur bespoke in der Wasserbilanz genutzt); nativer Monatsregen-Chart (die bestehende `rainfall`-Summen-Karte hat volle Historie und ist besser). Die neuen `*_tages*`-Charts sind vorwärts-only und **wachsen** ab Juli 2026.
+
 ---
 
 ## D) Schwerpunkt: Regenschauer-Neubau

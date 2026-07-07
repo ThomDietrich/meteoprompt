@@ -88,6 +88,11 @@ export const CATALOG: CatalogEntry[] = [
   entry("wind_chill", "windkuhle", "°C", "Windchill", ["windchill", "wind chill", "gefühlte kälte", "gefuehlte kaelte", "windkühle", "windkuehle"], "mean", "1h", "line", "temperatur"),
   entry("outdoor_temp_18h_max", "aussentemperatur_maximum_18h", "°C", "Außentemp. 18 h-Max", ["tageshöchst", "tageshoechst", "höchsttemperatur", "hoechsttemperatur", "max temperature"], "max", "1h", "line", "temperatur"),
   entry("outdoor_temp_18h_min", "aussentemperatur_minimum_18h", "°C", "Außentemp. 18 h-Min", ["tagestiefst", "tiefsttemperatur", "min temperature"], "min", "1h", "line", "temperatur"),
+  // Calendar-day extremes (+ their _zeitpunkt state series) — cleaner than the 18h
+  // rolling ones, but forward-only history (new derived series ~from 2026-07).
+  // Synonyms kept collision-free vs. the 18h keys above.
+  entry("outdoor_temp_daily_max", "aussentemperatur_tagesmaximum", "°C", "Tageshöchsttemperatur", ["tageshöchsttemperatur", "tageshoechsttemperatur", "tagesmaximum", "kalendertag maximum"], "max", "1d", "line", "temperatur"),
+  entry("outdoor_temp_daily_min", "aussentemperatur_tagesminimum", "°C", "Tagestiefsttemperatur", ["tagestiefsttemperatur", "tagesminimum", "kalendertag minimum"], "min", "1d", "line", "temperatur"),
 
   // ── Feuchte ─────────────────────────────────────────────────────────────
   entry("outdoor_humidity", "luftfeuchte", "%", "Luftfeuchte (außen)", ["luftfeuchte", "feuchte", "humidity", "luftfeuchtigkeit", "feuchtigkeit"], "mean", "1h", "line", "feuchte"),
@@ -98,6 +103,8 @@ export const CATALOG: CatalogEntry[] = [
   // `_measurement`/HA unit label "km/h" is stale — values are m/s throughout history).
   entry("wind_speed", "windgeschwindigkeit", "m/s", "Windgeschwindigkeit", ["wind", "windgeschwindigkeit", "wind speed", "windstärke", "windstaerke"], "mean", "1h", "windrose", "wind"),
   entry("wind_gust", "boengeschwindigkeit", "m/s", "Windböen", ["böen", "boeen", "gust", "wind gust", "windböen", "windboeen", "böengeschwindigkeit", "boengeschwindigkeit"], "max", "1h", "line", "wind"),
+  // Calendar-day peak gust (+ _zeitpunkt state) — Extension 1.4.0, forward-only. m/s.
+  entry("wind_gust_daily_max", "boengeschwindigkeit_tagesmaximum", "m/s", "Tages-Böenmaximum", ["stärkste böe", "staerkste boee", "böenmaximum", "boeenmaximum", "sturm", "peak gust", "max gust"], "max", "1d", "bars", "wind"),
   entry("wind_direction", "windrichtung", "°", "Windrichtung", ["windrichtung", "richtung", "wind direction"], "mean", "1h", "windrose", "wind"),
   entry("wind_gust_direction", "boenrichtung", "°", "Windböen-Richtung", ["böenrichtung", "boeenrichtung", "boenrichtung", "gust direction"], "mean", "1h", "windrose", "wind"),
   entry("wind_run", "windweg", "km", "Windweg (Tag)", ["windweg", "wind run"], "max", "1d", "bars", "wind"),

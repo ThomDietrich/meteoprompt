@@ -109,6 +109,20 @@ export const PERMANENT_GROUPS: PermanentGroup[] = [
         caption:
           "Jeder Tag des Jahres ein Feld, wärmer = röter — zeigt den Jahresverlauf und ungewöhnlich warme/kalte Tage auf einen Blick.",
       },
+      {
+        spec: {
+          id: "perm-tagesextrema",
+          title: "Tageshoch & -tief (30 Tage)",
+          chart: "line",
+          timeRange: { start: "-30d", stop: "now" },
+          series: [
+            s("perm-tagesextrema-s0", "Tageshoch", "outdoor_temp_daily_max", "max", "1d", { color: ACCENT }),
+            s("perm-tagesextrema-s1", "Tagestief", "outdoor_temp_daily_min", "min", "1d", { color: BLUE_LIGHT }),
+          ],
+        },
+        caption:
+          "Kalendertag-Höchst- und Tiefsttemperatur — die Spanne zeigt, wie stark Tag und Nacht auseinanderliegen. Neue Serie ab Juli 2026 (wächst mit).",
+      },
     ],
   },
 
@@ -270,6 +284,19 @@ export const PERMANENT_GROUPS: PermanentGroup[] = [
         },
         caption:
           "Mittlerer Wind (Linie) und Spitzenböen — eine große Lücke zwischen beiden = böig/wechselhaft, gleichmäßig = stabile Lage.",
+      },
+      {
+        spec: {
+          id: "perm-sturmlog",
+          title: "Stärkste Böen je Tag (30 Tage)",
+          chart: "bars",
+          timeRange: { start: "-30d", stop: "now" },
+          series: [
+            s("perm-sturmlog-s0", "Tages-Böenmaximum", "wind_gust_daily_max", "max", "1d", { color: ACCENT }),
+          ],
+        },
+        caption:
+          "Stärkste Windböe je Kalendertag (m/s) — macht Sturmtage auf einen Blick sichtbar. Neue Serie ab Juli 2026 (wächst mit).",
       },
     ],
   },

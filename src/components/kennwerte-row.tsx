@@ -16,6 +16,8 @@ import {
   SunMedium,
   SunDim,
   CalendarOff,
+  Umbrella,
+  Antenna,
   type LucideIcon,
 } from "lucide-react";
 
@@ -48,6 +50,8 @@ const ICONS: Record<string, LucideIcon> = {
   SunMedium,
   SunDim,
   CalendarOff,
+  Umbrella,
+  Antenna,
 };
 
 /** Format a numeric value with a German decimal comma and unit-aware precision. */
@@ -69,10 +73,19 @@ function formatValue(v: number | null, unit: string): string {
 function Cell({ kv }: { kv: KennwertValue }) {
   const def = KENNWERTE.find((k) => k.key === kv.key);
   const Icon = def ? (ICONS[def.icon] ?? Thermometer) : Thermometer;
-  const valueText = formatValue(kv.value, kv.unit);
-  // Show the unit only when there is a value and the unit is meaningful ("–" = none).
-  const unitText = kv.value == null || kv.unit === "–" ? "" : ` ${kv.unit}`;
+  // A text status (e.g. "Online"/"Offline") replaces the numeric value + unit and
+  // is coloured by the `ok` health flag; otherwise show the formatted number.
+  const hasText = kv.text != null;
+  const valueText = hasText ? kv.text! : formatValue(kv.value, kv.unit);
+  const unitText =
+    hasText || kv.value == null || kv.unit === "–" ? "" : ` ${kv.unit}`;
   const compassText = kv.compass ? ` ${kv.compass}` : "";
+  const valueClass =
+    hasText && kv.ok === false
+      ? "text-red-600 dark:text-red-400"
+      : hasText && kv.ok === true
+        ? "text-emerald-600 dark:text-emerald-400"
+        : "text-slate-800 dark:text-slate-100";
 
   return (
     <div className="flex items-center gap-2.5 px-3.5 py-3 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40">
@@ -84,7 +97,7 @@ function Cell({ kv }: { kv: KennwertValue }) {
         <div className="truncate text-[11px] font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
           {kv.label}
         </div>
-        <div className="text-sm font-semibold tabular-nums text-slate-800 dark:text-slate-100">
+        <div className={`text-sm font-semibold tabular-nums ${valueClass}`}>
           {valueText}
           {unitText}
           {compassText}
