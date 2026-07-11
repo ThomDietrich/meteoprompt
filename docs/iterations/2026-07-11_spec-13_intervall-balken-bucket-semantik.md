@@ -1,6 +1,6 @@
 # Iteration spec-13 — Perioden-Balken: Intervall-Semantik & eindeutige Beschriftung
 
-> **Status:** ✅ abgeschlossen — 2026-07-12
+> **Status:** ✅ abgeschlossen — 2026-07-12 · Commit `8d59317`
 >
 > Balken für Tages-/Wochen-/Monatswerte werden aktuell wie **Momentwerte** behandelt: mittig auf
 > dem Datums-Tick, Tooltip „DD.MM.YYYY, 00:00", und wegen `_stop`-Beschriftung des Aggregat-Buckets
