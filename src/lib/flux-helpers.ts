@@ -155,14 +155,18 @@ export function adaptiveWindow(
 }
 
 /**
- * Calendar-month/year buckets read better labelled at their START (the month
- * they represent). `aggregateWindow` defaults to the bucket's `_stop` (the NEXT
- * boundary), so on a time axis a monthly bar drifts to the right and reads as the
- * following month (May's total sitting on the May/June line looks like June).
- * No-op for sub-month windows so daily/hourly charts are unchanged.
+ * Every aggregate bucket is timestamped at its START (`_start`, spec-13).
+ * `aggregateWindow` defaults to the bucket's `_stop` (the NEXT boundary), so on a
+ * time axis a bar drifts one period to the RIGHT and reads as the following
+ * period — a daily bar for the 6th lands on the 7th tick; May's total sits on the
+ * May/June line and looks like June. Anchoring at `_start` makes the bucket
+ * timestamp equal the period it represents, so placement AND the date/label are
+ * correct. Uniform across day/week/month/year (previously only mo/y). Matches the
+ * convention already used in overview.ts. The `window` arg is kept for call-site
+ * symmetry (all windows are start-anchored now, so it is unused).
  */
-export function timeSrcClause(window: string): string {
-  return /(mo|y)$/.test(window) ? ', timeSrc: "_start"' : "";
+export function timeSrcClause(_window: string): string {
+  return ', timeSrc: "_start"';
 }
 
 export function compareOp(op: string): "<" | "<=" | ">" | ">=" {

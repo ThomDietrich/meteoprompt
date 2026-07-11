@@ -329,23 +329,24 @@ function extremeWindow(span: number | null): string {
 }
 
 /**
- * Pinpoint the exact extreme within the envelope BUCKET that produced `bucketEnd`
- * via a narrow raw min()/max(). aggregateWindow labels a bucket by its END time,
- * so the bucket covers `[bucketEnd - windowMs, bucketEnd]`. That window is at most
- * a few days (1d–7d), so the scan is cheap regardless of the overall range.
- * Returns the precise `(_time, _value)`, or null if the window has no data.
+ * Pinpoint the exact extreme within the envelope BUCKET starting at `bucketStart`
+ * via a narrow raw min()/max(). aggregateWindow now labels every bucket by its
+ * START (`_start`, spec-13), so the bucket covers `[bucketStart, bucketStart +
+ * windowMs)`. That window is at most a few days (1d–7d), so the scan is cheap
+ * regardless of the overall range. The scanned interval is identical to before
+ * (only the label moved from `_stop` to `_start`), so the answer's value/time are
+ * unchanged. Returns the precise `(_time, _value)`, or null if the window is empty.
  */
 async function rawExtremeInBucket(
   bucket: string,
   cat: CatalogEntry,
   mode: "min" | "max",
-  bucketEnd: string,
+  bucketStart: string,
   windowMs: number,
 ): Promise<SeriesPoint | null> {
-  const end = new Date(bucketEnd);
-  // Pad the window by 1ms so the boundary instant at bucketEnd is included.
-  const start = new Date(end.getTime() - windowMs);
-  const stop = new Date(end.getTime() + 1);
+  const start = new Date(bucketStart);
+  // Pad the window by 1ms so the boundary instant at the far edge is included.
+  const stop = new Date(start.getTime() + windowMs + 1);
   const flux = `from(bucket: "${bucket}")
   |> range(start: ${start.toISOString()}, stop: ${stop.toISOString()})
   |> filter(fn: (r) => r["entity_id"] == "${cat.entityId}")
@@ -658,7 +659,7 @@ async function windowedPoints(
   |> range(start: ${start}, stop: ${stop})
   |> filter(fn: (r) => r["entity_id"] == "${cat.entityId}")
   |> filter(fn: (r) => r["_field"] == "value")
-  |> aggregateWindow(every: ${w}, fn: ${fn}, createEmpty: false)
+  |> aggregateWindow(every: ${w}, fn: ${fn}, createEmpty: false, timeSrc: "_start")
   ${TERMINAL_SORT}
   |> yield(name: "v")`;
   return runFluxPoints(flux);
