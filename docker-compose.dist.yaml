@@ -21,7 +21,7 @@ services:
       # two keys below the build block:
       #   target: dev
       #   command: npm run dev
-      #   volumes: ["./:/app", "node_modules:/app/node_modules", "next_cache:/app/.next", "app_data:/app/data"]
+      #   volumes: ["./:/app", "node_modules:/app/node_modules", "next_cache:/app/.next", "./data:/app/data"]
     restart: unless-stopped
 
     env_file:
@@ -31,7 +31,10 @@ services:
       - NEXT_TELEMETRY_DISABLED=1
 
     volumes:
-      - app_data:/app/data        # pinned cards + failed-query log (persist this)
+      # Host bind mount (spec-15): the prompt/event log (prompts.jsonl), failed-query
+      # log and pinned cards land in ./data next to this file — directly visible and
+      # greppable on the host. Create it once: `mkdir -p data`.
+      - ./data:/app/data
 
     # A reverse proxy on the same host reaches the app here; remove this if you
     # route via a proxy network + labels instead.
@@ -47,10 +50,10 @@ services:
     #   - "traefik.http.routers.meteoprompt.tls.certresolver=myresolver"
     #   - "traefik.http.services.meteoprompt.loadbalancer.server.port=3000"
 
-volumes:
-  app_data:
-  # node_modules:   # only needed if you switch the build to the dev target
-  # next_cache:
+# Named volumes only needed if you switch the build to the dev target:
+# volumes:
+#   node_modules:
+#   next_cache:
 
 # networks:
 #   proxy:

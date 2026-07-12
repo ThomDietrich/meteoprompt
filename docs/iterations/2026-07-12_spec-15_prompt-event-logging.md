@@ -1,6 +1,6 @@
 # Iteration spec-15 — Prompt- & Ereignis-Logging (sichtbar + host-persistiert)
 
-> **Status:** 📝 geplant — 2026-07-12 (Vorschlag zur Review)
+> **Status:** ✅ abgeschlossen — 2026-07-12
 >
 > Jeder eingegebene Prompt (Erfolg **und** Fehler) sowie ausgewählte App-Ereignisse sollen
 > nachvollziehbar sein — (a) strukturiert in der **Konsole** (`docker compose logs`) und (b) in einer
@@ -52,11 +52,14 @@
   `/api/chart` analog (Regenerate/Pin-Refresh).
 - `src/instrumentation.ts` (Next `register()`): `server_start` **und** ein einmaliger InfluxDB-Konnektivitäts-Ping
   → `db_connect` bzw. `db_error`.
-- `src/lib/influx.ts`: DB-Fehler zentral über `logEvent({event:"db_error", …})` (statt nur `console.error`),
-  damit sie auch in `prompts.jsonl` landen.
-- `lib/query-log.ts` (`failed-queries.jsonl`): entweder **auf den neuen Logger umstellen** (prompts.jsonl
-  wird die eine Quelle, `prompt_error`) oder unverändert lassen (Doppel-Log). **Empfehlung:** vereinheitlichen
-  → `prompts.jsonl` als kanonisches Log; `failed-queries.jsonl` entfällt für Neues (Altdatei bleibt liegen).
+- **DB-Fehler zur Laufzeit:** treten sie *während eines Prompts* auf, landen sie bereits als
+  `prompt_error` (Reason `timeout`/`config`/`server_error`) — der Kontext (welcher Prompt) ist so am
+  wertvollsten. Der heiße Influx-Pfad (`influx.ts`, 4 Query-Runner) bleibt **bewusst unangetastet**:
+  ein `db_error` pro fehlgeschlagenem `/api/now`-Poll würde das Log fluten. (Optional später: ein
+  Zustandswechsel-Monitor, der DB-Ausfall/-Recovery nur bei Übergang loggt.)
+- `lib/query-log.ts` → **vereinheitlicht**: `logFailedQuery` ist jetzt ein dünner Wrapper über
+  `logEvent({event:"prompt_error", …})`; `failed-queries.jsonl` entfällt (alle Prompts + Fehler in
+  `prompts.jsonl`). Call-Sites in `/api/ask` + `/api/chart` unverändert.
 
 **4) Datensatz-Schema** (`prompts.jsonl`, eine Zeile/Ereignis)
 ```jsonc

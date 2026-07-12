@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { deriveQuerySpec, UnmappableQueryError } from "@/lib/claude";
 import { ChartShapeError, resolveChart } from "@/lib/flux";
+import { logEvent } from "@/lib/logger";
 import { categorizeDataError } from "@/lib/query-error";
 import { logFailedQuery } from "@/lib/query-log";
 import { generateSummary } from "@/lib/summary";
@@ -37,6 +38,10 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+
+  // Log every prompt at ingress (crash-safe) + start the duration clock (spec-15).
+  const started = Date.now();
+  logEvent({ event: "prompt_received", query: q, route: "/api/ask" });
 
   // 1) NL → validated QuerySpec via Claude tool-use.
   let charts;
@@ -83,6 +88,14 @@ export async function POST(request: Request) {
       }),
     );
 
+    logEvent({
+      event: "prompt_ok",
+      query: q,
+      route: "/api/ask",
+      chartTypes: results.map((r) => r.spec.chart),
+      chartCount: results.length,
+      durationMs: Date.now() - started,
+    });
     const payload: AskResponse = { query: q, charts: results };
     return NextResponse.json(payload, {
       headers: { "Cache-Control": "no-store" },

@@ -1,28 +1,22 @@
 import "server-only";
 
-import { appendJsonl } from "@/lib/store";
+import { logEvent } from "@/lib/logger";
 
 /**
- * Append-only log of queries the app couldn't answer (spec-05 §6). Every 422
- * (out_of_scope / unmappable / unknown metric / shape error) and server-side
- * failure in /api/ask (and /api/chart) is recorded to data/failed-queries.jsonl
- * for later analysis. No secrets are written. Best-effort: a logging failure
- * never breaks the request.
+ * Failed-query logging (spec-05 §6). As of spec-15 this is a thin wrapper over the
+ * unified event logger: a failed query is recorded as a `prompt_error` event in
+ * `data/prompts.jsonl` (host-visible) AND on the console — no separate
+ * `failed-queries.jsonl`. Call sites in /api/ask and /api/chart are unchanged.
+ * No secrets are written. Best-effort: a logging failure never breaks the request.
  */
-
-const LOG_FILE = "failed-queries.jsonl";
 
 export interface FailedQueryRecord {
   query: string;
-  reason: string; // category: out_of_scope | unmappable | chart_shape | timeout | config | server_error
+  reason: string; // out_of_scope | unmappable | chart_shape | timeout | config | server_error | llm_error | invalid_spec
   detail?: string;
   route: string; // "/api/ask" | "/api/chart"
 }
 
-export async function logFailedQuery(rec: FailedQueryRecord): Promise<void> {
-  try {
-    await appendJsonl(LOG_FILE, { ts: new Date().toISOString(), ...rec });
-  } catch {
-    // Logging must never break the response path.
-  }
+export function logFailedQuery(rec: FailedQueryRecord): void {
+  logEvent({ event: "prompt_error", ...rec });
 }
