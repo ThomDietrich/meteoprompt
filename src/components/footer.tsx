@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Sun } from "lucide-react";
 
-import { siteTagline } from "@/lib/site";
+import { siteName, siteTagline } from "@/lib/site";
 
 /**
  * Site footer — a calm, balanced counterpart to the masthead (spec-03 §3).
@@ -52,7 +52,7 @@ export function Footer() {
           </span>
           <div className="leading-tight">
             <p className="font-wordmark text-base tracking-tight text-brand-blue dark:text-sky-300">
-              MeteoPrompt
+              {siteName()}
             </p>
             <p className="text-[13px] text-slate-500 dark:text-slate-400">
               {siteTagline()}
@@ -71,7 +71,7 @@ export function Footer() {
             </Link>
           </p>
           <p className="mt-1 text-slate-400 dark:text-slate-500">
-            © {year} MeteoPrompt
+            © {year} {siteName()}
           </p>
         </div>
       </div>

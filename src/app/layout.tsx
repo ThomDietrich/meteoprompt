@@ -1,9 +1,11 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Archivo_Black } from "next/font/google";
+import Script from "next/script";
 
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
-import { siteTagline } from "@/lib/site";
+import { PwaRegister } from "@/components/pwa-register";
+import { appName, siteName, siteTagline } from "@/lib/site";
 import "./globals.css";
 
 // Bold grotesque display font for the "MeteoPrompt" wordmark only (header +
@@ -19,11 +21,26 @@ const archivoBlack = Archivo_Black({
 // runtime from the container's environment, not at build time.
 export const dynamic = "force-dynamic";
 
+// PWA/standalone chrome (spec-14): brand-blue theme colour drives the mobile
+// status bar; viewport-fit cover lets the app draw under the iOS notch.
+export const viewport: Viewport = {
+  themeColor: "#1f5ba8",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
+
 export function generateMetadata(): Metadata {
+  const name = siteName(); // on-page wordmark / window title
+  const app = appName(); // installed-app / home-screen name (may differ)
   const tagline = siteTagline();
   return {
-    title: `MeteoPrompt – ${tagline}`,
-    description: `MeteoPrompt — ${tagline}. Die Zeitreihen der eigenen Wetterstation per Prompt erkunden.`,
+    title: `${name} – ${tagline}`,
+    description: `${name} — ${tagline}. Die Zeitreihen der eigenen Wetterstation per Prompt erkunden.`,
+    applicationName: app,
+    manifest: "/manifest.webmanifest",
+    appleWebApp: { capable: true, statusBarStyle: "default", title: app },
+    icons: { apple: [{ url: "/apple-icon-180.png", sizes: "180x180", type: "image/png" }] },
   };
 }
 
@@ -35,6 +52,13 @@ export default function RootLayout({
   return (
     <html lang="de" className={archivoBlack.variable}>
       <body className="flex min-h-screen flex-col antialiased">
+        {/* Capture beforeinstallprompt BEFORE hydration so the install button
+            (components/install-button.tsx) can adopt it — the event may fire
+            before React runs its effect (spec-14). */}
+        <Script id="bip-capture" strategy="beforeInteractive">
+          {`window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__bip=e;window.dispatchEvent(new Event('bip-available'));});`}
+        </Script>
+        <PwaRegister />
         <Header />
         <div className="flex-1">{children}</div>
         <Footer />

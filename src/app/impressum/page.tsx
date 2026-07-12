@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 
+import { siteName } from "@/lib/site";
+
 /**
  * Impressum — server-rendered legal page (§5 DDG / §18 Abs. 2 MStV). The shared
  * Header/Footer come from the root layout, so this page only supplies the
@@ -13,10 +15,13 @@ import type { Metadata } from "next";
  */
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "Impressum – MeteoPrompt",
-  description: "Impressum und Anbieterkennzeichnung für MeteoPrompt.",
-};
+export function generateMetadata(): Metadata {
+  const name = siteName();
+  return {
+    title: `Impressum – ${name}`,
+    description: `Impressum und Anbieterkennzeichnung für ${name}.`,
+  };
+}
 
 const provider = {
   name: process.env.IMPRESSUM_NAME ?? "[Name – in .env setzen]",
