@@ -90,6 +90,17 @@ export function SearchBox({
   // 3 demo examples, chosen once per mount → stable per load, varies on reload.
   const [examples] = useState(() => pickExamples(3));
 
+  // Autofocus the query box on load — DESKTOP ONLY (mouse / fine pointer). On a
+  // touch phone, autofocusing scrolls the page down and pops the keyboard on
+  // load, which is disruptive; there the field focuses only when the user taps
+  // it. (Replaces the old unconditional `autoFocus` attribute.)
+  useEffect(() => {
+    if (!isHero || typeof window === "undefined") return;
+    if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
+      textareaRef.current?.focus();
+    }
+  }, [isHero, textareaRef]);
+
   function submit() {
     const q = value.trim();
     if (!q || pending) return;
@@ -144,7 +155,6 @@ export function SearchBox({
               onKeyDown={handleKeyDown}
               placeholder="Frage eingeben …"
               disabled={pending}
-              autoFocus
               rows={1}
               className={`${sharedTextareaClasses} px-6 py-4 text-lg leading-relaxed`}
             />
