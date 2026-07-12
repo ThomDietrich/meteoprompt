@@ -40,7 +40,16 @@ export function generateMetadata(): Metadata {
     applicationName: app,
     manifest: "/manifest.webmanifest",
     appleWebApp: { capable: true, statusBarStyle: "default", title: app },
-    icons: { apple: [{ url: "/apple-icon-180.png", sizes: "180x180", type: "image/png" }] },
+    icons: {
+      // Must list `icon` explicitly: once metadata.icons is set, Next stops
+      // auto-emitting the file-based app/icon.svg favicon (that dropped the tab
+      // icon). SVG primary + PNG fallback for browsers without SVG-favicon support.
+      icon: [
+        { url: "/icon.svg", type: "image/svg+xml" },
+        { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      ],
+      apple: [{ url: "/apple-icon-180.png", sizes: "180x180", type: "image/png" }],
+    },
   };
 }
 
