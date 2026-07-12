@@ -54,4 +54,8 @@ abgedeckt (Schauer-Sessionisierung, Transforms, Sanitizer, Tageslänge, Katalog-
   + `spec-NN` (nullgepaddete laufende Nummer) + Kurz-Slug. Jedes trägt oben eine `Status:`-Zeile
   (`geplant` · `aktiv` · `abgeschlossen [+ Commit]`). **Kein** rollierendes `SPEC.md`.
 - Referenz-/Hintergrund-Doku gehört nach `docs/`.
-- **Nur committen, wenn der Mensch es verlangt.**
+- **In normaler Kadenz committen** („commit early, commit often"): jede abgeschlossene,
+  verifizierte Arbeitseinheit direkt als eigener, atomarer Commit mit aussagekräftiger Message —
+  **nicht** auf ein explizites „commit this" warten. Voraussetzung: das Verifikations-Gate ist grün.
+  **Pushen** dagegen nur nach Rücksprache (nach außen gerichtet). Commits gehen auf den Arbeits-Branch
+  (dieses Repo arbeitet auf `main`).
