@@ -12,7 +12,9 @@ const series = (over: Partial<ResolvedSeries>): ResolvedSeries => ({
 });
 
 describe("seriesToCsv", () => {
-  it("sorts points ascending, uses dot decimals + CRLF + a labelled header", () => {
+  it("sorts points ascending, uses dot decimals + CRLF; daily buckets add time_end", () => {
+    // Two points one day apart → inferred as a daily aggregate → interval export
+    // (time + time_end). Last row's end is synthesised (start + one day).
     const csv = seriesToCsv([
       series({
         points: [
@@ -22,12 +24,21 @@ describe("seriesToCsv", () => {
       }),
     ]);
     expect(csv).toBe(
-      "time,Temp (°C)\r\n2020-01-01T00:00:00Z,1.5\r\n2020-01-02T00:00:00Z,2.5",
+      "time,time_end,Temp (°C)\r\n" +
+        "2020-01-01T00:00:00Z,2020-01-02T00:00:00Z,1.5\r\n" +
+        "2020-01-02T00:00:00Z,2020-01-03T00:00:00.000Z,2.5",
     );
-    // Explicit sub-property checks the exact string already covers:
     expect(csv).toContain("\r\n"); // CRLF line endings
     expect(csv).toContain("1.5"); // dot decimal, not a comma
-    expect(csv.split("\r\n")[0]).toBe("time,Temp (°C)"); // header
+    expect(csv.split("\r\n")[0]).toBe("time,time_end,Temp (°C)"); // header
+  });
+
+  it("keeps a single `time` column for instant / single-row data", () => {
+    // A single point can't imply a period → base format, no time_end.
+    const csv = seriesToCsv([
+      series({ points: [{ t: "2020-01-01T00:00:00Z", v: 1.5 }] }),
+    ]);
+    expect(csv.split("\r\n")[0]).toBe("time,Temp (°C)");
   });
 
   it("quotes a header label that contains a comma", () => {

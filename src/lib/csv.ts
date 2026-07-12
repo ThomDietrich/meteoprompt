@@ -1,5 +1,6 @@
 "use client";
 
+import { GRAIN_MS, inferGrain } from "@/components/charts/chart-base";
 import type { ResolvedSeries, ShapedData } from "@/lib/query-spec";
 
 /**
@@ -83,8 +84,18 @@ function shapedColumns(
 
 /** Generate the CSV text for a set of resolved series. */
 export function seriesToCsv(series: ResolvedSeries[]): string {
+  // Period aggregates (day/week/month/year, ≥2 point-buckets) also export the
+  // interval END (`time_end`) so the exact bucket span is explicit downstream —
+  // parity with the table's Von/Bis columns (spec-13). Instant / sub-daily data
+  // (or a single row, where a period can't be inferred) keeps just `time`.
+  const grain = inferGrain(series.flatMap((s) => s.points));
+  const distinctTimes = new Set(series.flatMap((s) => s.points.map((p) => p.t))).size;
+  const isPeriod =
+    distinctTimes >= 2 &&
+    (grain === "day" || grain === "week" || grain === "month" || grain === "year");
+
   // Time-keyed join across every series (and any time-keyed shaped columns).
-  const headers: string[] = ["time"];
+  const headers: string[] = isPeriod ? ["time", "time_end"] : ["time"];
   const rowsByTime = new Map<string, Record<string, string>>();
   const ensure = (t: string) => {
     let row = rowsByTime.get(t);
@@ -112,10 +123,17 @@ export function seriesToCsv(series: ResolvedSeries[]): string {
 
   const times = [...rowsByTime.keys()].sort();
   const lines = [headers.map(csvField).join(",")];
-  for (const t of times) {
+  times.forEach((t, i) => {
     const row = rowsByTime.get(t)!;
+    // Interval END = next bucket's start (last row → start + one grain).
+    if (isPeriod) {
+      row["time_end"] =
+        i + 1 < times.length
+          ? times[i + 1]
+          : new Date(new Date(t).getTime() + GRAIN_MS[grain]).toISOString();
+    }
     lines.push(headers.map((h) => csvField(row[h] ?? "")).join(","));
-  }
+  });
   return lines.join("\r\n");
 }
 

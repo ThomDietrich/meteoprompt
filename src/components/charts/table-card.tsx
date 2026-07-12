@@ -85,13 +85,15 @@ function buildRows(series: ResolvedSeries[], grain: Grain): TableRow[] {
 
 export function TableCard({ series }: { series: ResolvedSeries[] }) {
   const grain = useMemo(() => inferGrain(series.flatMap((s) => s.points)), [series]);
-  // Period aggregates (day/week/month/year) render an explicit INTERVAL: a
-  // readable "Zeitraum" label + exact Von/Bis boundary timestamps (spec-13 →
-  // tables) — no more ambiguous "…, 00:00". Instant / sub-daily data keeps a
-  // single "Zeitpunkt", where the time of day is meaningful.
-  const isPeriod =
-    grain === "day" || grain === "week" || grain === "month" || grain === "year";
   const rows = useMemo(() => buildRows(series, grain), [series, grain]);
+  // Period aggregates (day/week/month/year, ≥2 buckets) render an explicit
+  // INTERVAL: a readable "Zeitraum" label + exact Von/Bis boundary timestamps
+  // (spec-13 → tables) — no more ambiguous "…, 00:00". Instant / sub-daily data
+  // (or a single row, where no period can be inferred) keeps a single
+  // "Zeitpunkt", where the time of day is meaningful.
+  const isPeriod =
+    rows.length >= 2 &&
+    (grain === "day" || grain === "week" || grain === "month" || grain === "year");
 
   const columns = useMemo<ColumnDef<TableRow>[]>(() => {
     const cols: ColumnDef<TableRow>[] = [];
