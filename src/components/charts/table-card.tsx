@@ -12,7 +12,13 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 
-import { deNum } from "@/components/charts/chart-base";
+import {
+  deNum,
+  GRAIN_MS,
+  inferGrain,
+  periodLabel,
+  type Grain,
+} from "@/components/charts/chart-base";
 import type { ResolvedSeries } from "@/lib/query-spec";
 
 /**
@@ -25,9 +31,12 @@ import type { ResolvedSeries } from "@/lib/query-spec";
  * few discrete values) — see claude.ts + chart-catalog.ts.
  */
 
-/** One joined table row: a timestamp key + the value of each series at that time. */
+/** One joined table row: the bucket START (`t`) + its exclusive END, and the
+ *  value of each series at that time. `end` bounds the period for the Von/Bis
+ *  columns of an aggregate table (spec-13 → tables). */
 interface TableRow {
   t: string;
+  end: string;
   /** seriesId → value (may be undefined if a series has no point at this time). */
   values: Record<string, number | undefined>;
 }
@@ -51,8 +60,8 @@ function fmtTime(iso: string): string {
  * point at that time leaves a gap). Rows start in chronological order; sorting is
  * handled by the table.
  */
-function buildRows(series: ResolvedSeries[]): TableRow[] {
-  const byTime = new Map<string, TableRow>();
+function buildRows(series: ResolvedSeries[], grain: Grain): TableRow[] {
+  const byTime = new Map<string, { t: string; values: Record<string, number | undefined> }>();
   for (const s of series) {
     for (const p of s.points) {
       let row = byTime.get(p.t);
@@ -63,22 +72,63 @@ function buildRows(series: ResolvedSeries[]): TableRow[] {
       row.values[s.id] = p.v;
     }
   }
-  return [...byTime.values()].sort((a, b) => a.t.localeCompare(b.t));
+  const sorted = [...byTime.values()].sort((a, b) => a.t.localeCompare(b.t));
+  // Interval END = next bucket's start (last row → start + one grain).
+  return sorted.map((r, i) => ({
+    ...r,
+    end:
+      i + 1 < sorted.length
+        ? sorted[i + 1].t
+        : new Date(new Date(r.t).getTime() + GRAIN_MS[grain]).toISOString(),
+  }));
 }
 
 export function TableCard({ series }: { series: ResolvedSeries[] }) {
-  const rows = useMemo(() => buildRows(series), [series]);
+  const grain = useMemo(() => inferGrain(series.flatMap((s) => s.points)), [series]);
+  // Period aggregates (day/week/month/year) render an explicit INTERVAL: a
+  // readable "Zeitraum" label + exact Von/Bis boundary timestamps (spec-13 →
+  // tables) — no more ambiguous "…, 00:00". Instant / sub-daily data keeps a
+  // single "Zeitpunkt", where the time of day is meaningful.
+  const isPeriod =
+    grain === "day" || grain === "week" || grain === "month" || grain === "year";
+  const rows = useMemo(() => buildRows(series, grain), [series, grain]);
 
   const columns = useMemo<ColumnDef<TableRow>[]>(() => {
-    const cols: ColumnDef<TableRow>[] = [
-      {
+    const cols: ColumnDef<TableRow>[] = [];
+    if (isPeriod) {
+      cols.push({
+        id: "zeitraum",
+        header: "Zeitraum",
+        accessorFn: (row) => row.t,
+        cell: (ctx) => {
+          const r = ctx.row.original;
+          return periodLabel(grain, new Date(r.t).getTime(), new Date(r.end).getTime());
+        },
+        sortingFn: "alphanumeric",
+      });
+      cols.push({
+        id: "von",
+        header: "Von",
+        accessorFn: (row) => row.t,
+        cell: (ctx) => fmtTime(ctx.getValue<string>()),
+        sortingFn: "alphanumeric",
+      });
+      cols.push({
+        id: "bis",
+        header: "Bis",
+        accessorFn: (row) => row.end,
+        cell: (ctx) => fmtTime(ctx.getValue<string>()),
+        sortingFn: "alphanumeric",
+      });
+    } else {
+      cols.push({
         id: "t",
         header: "Zeitpunkt",
         accessorFn: (row) => row.t,
         cell: (ctx) => fmtTime(ctx.getValue<string>()),
         sortingFn: "alphanumeric",
-      },
-    ];
+      });
+    }
     for (const s of series) {
       const unit = s.unit ? ` ${s.unit}` : "";
       cols.push({
@@ -95,11 +145,11 @@ export function TableCard({ series }: { series: ResolvedSeries[] }) {
       });
     }
     return cols;
-  }, [series]);
+  }, [series, isPeriod, grain]);
 
   // Default sort: newest first (time descending) — most-recent-on-top reads well.
   const [sorting, setSorting] = useState<SortingState>([
-    { id: "t", desc: true },
+    { id: isPeriod ? "zeitraum" : "t", desc: true },
   ]);
 
   const table = useReactTable({

@@ -163,6 +163,28 @@ export function periodAxisLabel(grain: Grain, ms: number): string {
   return `${d.getFullYear()}`;
 }
 
+/**
+ * Compact period label for a TABLE cell (spec-13 → tables): no weekday prefix /
+ * qualifier, just the interval a bucket `[startMs, endMs)` covers. Day → date;
+ * week/month/year upgrade to "KW N (…)" / "Juli 2026" / "2026" only when calendar-
+ * aligned, else an inclusive date range. `hour` (or finer) keeps a plain time.
+ */
+export function periodLabel(grain: Grain, startMs: number, endMs: number): string {
+  const s = new Date(startMs);
+  if (grain === "hour") return `${pad(s.getHours())}:00`;
+  if (grain === "day") return deDate(startMs);
+  const lastDay = new Date(endMs - 86_400_000); // last day the bucket covers
+  const spanD = (endMs - startMs) / 86_400_000;
+  if (grain === "week" && s.getDay() === 1 && spanD > 6.5 && spanD < 7.5) {
+    return `KW ${isoWeek(s)} (${pad(s.getDate())}.${pad(s.getMonth() + 1)}.–${pad(lastDay.getDate())}.${pad(lastDay.getMonth() + 1)}.${lastDay.getFullYear()})`;
+  }
+  if (grain === "month" && s.getDate() === 1 && spanD > 27 && spanD < 32) {
+    return `${MON_FULL[s.getMonth()]} ${s.getFullYear()}`;
+  }
+  if (grain === "year" && s.getMonth() === 0 && s.getDate() === 1) return `${s.getFullYear()}`;
+  return `${deDate(startMs)} – ${deDate(lastDay.getTime())}`;
+}
+
 /** One row in a tooltip-axis formatter's params array (the bits we read). */
 type AxisTooltipParam = {
   axisValue?: number | string;

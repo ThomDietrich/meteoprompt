@@ -7,6 +7,7 @@ import {
   inferGrain,
   isoWeek,
   periodAxisLabel,
+  periodLabel,
   periodQualifier,
   periodTooltipHead,
   seriesColor,
@@ -105,6 +106,24 @@ describe("periodTooltipHead (names the period, no 00:00)", () => {
   it("falls back to an inclusive date range for a non-calendar-aligned bucket", () => {
     const thu = localMidnight(2026, 6, 2); // Thu, not a Monday
     expect(periodTooltipHead("week", thu, thu + 7 * DAY)).toBe("02.07.2026 – 08.07.2026");
+  });
+});
+
+describe("periodLabel (compact table cell)", () => {
+  it("renders a plain date for a day (no weekday, no 00:00)", () => {
+    const d = localMidnight(2026, 6, 7);
+    expect(periodLabel("day", d, d + DAY)).toBe("07.07.2026");
+  });
+  it("renders KW + range for a Monday week", () => {
+    const mon = localMidnight(2026, 6, 6);
+    expect(periodLabel("week", mon, mon + 7 * DAY)).toBe("KW 28 (06.07.–12.07.2026)");
+  });
+  it("renders the month name for a calendar month", () => {
+    expect(periodLabel("month", localMidnight(2026, 6, 1), localMidnight(2026, 7, 1))).toBe("Juli 2026");
+  });
+  it("falls back to a date range for a non-aligned bucket", () => {
+    const thu = localMidnight(2026, 6, 2);
+    expect(periodLabel("week", thu, thu + 7 * DAY)).toBe("02.07.2026 – 08.07.2026");
   });
 });
 
