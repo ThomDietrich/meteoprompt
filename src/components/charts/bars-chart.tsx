@@ -108,8 +108,11 @@ function buildOption(series: ResolvedSeries[]): EChartsOption {
     legend:
       nSeries > 1 ? { top: 0, type: "scroll", textStyle: { fontSize: 11 } } : undefined,
     tooltip: {
-      trigger: "axis",
-      axisPointer: { type: "shadow" },
+      // Item-triggered (not axis): the tooltip fires for the bar actually under
+      // the cursor (hit-test on the drawn rect). An axis trigger snaps to the
+      // NEAREST datum start, so the right half of an interval bar — which reaches
+      // the next day's 00:00 — wrongly showed the following day.
+      trigger: "item",
       formatter: (params) => {
         const list = Array.isArray(params) ? params : [params];
         if (list.length === 0) return "";
@@ -148,13 +151,16 @@ function buildOption(series: ResolvedSeries[]): EChartsOption {
       axisLabel: { formatter: `{value} ${unit}` },
     },
     series: series.map((s, i) => {
+      const color = seriesColor(series, i);
       const fallback = medianGap(s) ?? GRAIN_MS[grain];
       return {
         name: s.label,
         type: "custom" as const,
+        // Series colour → tooltip marker + legend match the drawn bars.
+        itemStyle: { color },
         // Include the end dim in the x-extent so the last bar isn't clipped.
         encode: { x: [0, 2], y: 1 },
-        renderItem: intervalBar(seriesColor(series, i), i, nSeries),
+        renderItem: intervalBar(color, i, nSeries),
         data: toBarData(s, fallback),
       };
     }),
