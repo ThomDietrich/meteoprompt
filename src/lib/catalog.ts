@@ -44,6 +44,17 @@ export interface CatalogEntry {
     | "strahlung"
     | "verdunstung";
   rainCounter?: boolean; // true → daily accumulator: read via difference(nonNegative)+sum
+  /**
+   * spec-16: first calendar day (YYYY-MM-DD, Europe/Berlin) with data, for series that
+   * start noticeably later than the station archive (2021-10-19). Absent = full history.
+   * Steers the model (system prompt) and guards against silently truncated charts.
+   */
+  historyFrom?: string;
+  /**
+   * spec-16: a long-history reading with the same meaning, used instead of this metric
+   * when a requested range starts before `historyFrom` (see src/lib/history.ts).
+   */
+  historyFallback?: { metric: string; aggregation: Aggregation; window: string };
 }
 
 const PREFIX = "garten_ventus_w830_";
@@ -76,7 +87,7 @@ function entry(
   };
 }
 
-export const CATALOG: CatalogEntry[] = [
+const BASE_CATALOG: CatalogEntry[] = [
   // ── Temperatur ──────────────────────────────────────────────────────────
   entry("outdoor_temperature", "aussentemperatur", "°C", "Außentemperatur", ["außentemperatur", "aussentemperatur", "temperatur", "draußen", "draussen", "temp", "outdoor temperature"], "mean", "1h", "line", "temperatur"),
   entry("indoor_temperature", "innentemperatur", "°C", "Innentemperatur", ["innen", "innentemperatur", "drinnen", "indoor temp", "indoor temperature"], "mean", "1h", "line", "temperatur"),
@@ -89,7 +100,8 @@ export const CATALOG: CatalogEntry[] = [
   entry("outdoor_temp_18h_max", "aussentemperatur_maximum_18h", "°C", "Außentemp. 18 h-Max", ["tageshöchst", "tageshoechst", "höchsttemperatur", "hoechsttemperatur", "max temperature"], "max", "1h", "line", "temperatur"),
   entry("outdoor_temp_18h_min", "aussentemperatur_minimum_18h", "°C", "Außentemp. 18 h-Min", ["tagestiefst", "tiefsttemperatur", "min temperature"], "min", "1h", "line", "temperatur"),
   // Calendar-day extremes (+ their _zeitpunkt state series) — cleaner than the 18h
-  // rolling ones, but forward-only history (new derived series ~from 2026-07).
+  // rolling ones. Full history: backfilled from the raw series for 2021-10-19 … 2026-07-04
+  // (spec-16), written live by the HA sensor since 2026-07-05.
   // Synonyms kept collision-free vs. the 18h keys above.
   entry("outdoor_temp_daily_max", "aussentemperatur_tagesmaximum", "°C", "Tageshöchsttemperatur", ["tageshöchsttemperatur", "tageshoechsttemperatur", "tagesmaximum", "kalendertag maximum"], "max", "1d", "line", "temperatur"),
   entry("outdoor_temp_daily_min", "aussentemperatur_tagesminimum", "°C", "Tagestiefsttemperatur", ["tagestiefsttemperatur", "tagesminimum", "kalendertag minimum"], "min", "1d", "line", "temperatur"),
@@ -145,6 +157,36 @@ export const CATALOG: CatalogEntry[] = [
   // accumulator — robust to any residual duplicate writes. See docs/data-quality-influxdb.md §4.
   entry("evapotranspiration", "evapotranspiration_tag", "mm", "Evapotranspiration", ["verdunstung", "evapotranspiration", "et", "verdunstungsrate", "evaporation"], "sum", "1d", "bars", "verdunstung", true),
 ];
+
+/**
+ * spec-16: history depth of the series that start later than the station archive
+ * (first data 2021-10-19). Verified against InfluxDB on 2026-09-15 (first() per entity,
+ * Berlin calendar day). The temperature calendar-day extremes are absent on purpose:
+ * backfilled from the raw series, they reach back to the archive start.
+ *
+ * A fallback is set only where the long-history reading keeps its meaning on every resolver
+ * path: the 18 h extremes → the backfilled calendar-day extremes. Deliberately none for
+ * rain_1h/rain_24h (rainfall is an accumulator that the answer and heatmap paths don't read
+ * via difference+sum) and none for wind_gust_daily_max (the raw gust series still carries
+ * unfiltered outliers, e.g. 60.5 m/s in 2022).
+ */
+export const HISTORY_DEPTH: Record<string, Pick<CatalogEntry, "historyFrom" | "historyFallback">> = {
+  rainfall: { historyFrom: "2021-11-30" },
+  rain_rate: { historyFrom: "2021-11-30" },
+  wind_direction: { historyFrom: "2022-09-12" },
+  wind_gust_direction: { historyFrom: "2022-09-12" },
+  wind_run: { historyFrom: "2022-09-12" },
+  sunshine_duration: { historyFrom: "2026-06-30" },
+  evapotranspiration: { historyFrom: "2026-07-03" },
+  rain_1h: { historyFrom: "2026-07-03" },
+  rain_24h: { historyFrom: "2026-07-03" },
+  outdoor_temp_18h_max: { historyFrom: "2026-07-05", historyFallback: { metric: "outdoor_temp_daily_max", aggregation: "max", window: "1d" } },
+  outdoor_temp_18h_min: { historyFrom: "2026-07-05", historyFallback: { metric: "outdoor_temp_daily_min", aggregation: "min", window: "1d" } },
+  dry_spell: { historyFrom: "2026-07-05" },
+  wind_gust_daily_max: { historyFrom: "2026-07-06" },
+};
+
+export const CATALOG: CatalogEntry[] = BASE_CATALOG.map((e) => ({ ...e, ...HISTORY_DEPTH[e.key] }));
 
 // ── Lookups ───────────────────────────────────────────────────────────────
 
