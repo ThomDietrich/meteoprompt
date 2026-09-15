@@ -15,7 +15,10 @@ const LOG_FILE = "prompts.jsonl";
 export type LogLevel = "info" | "error";
 
 export interface LogEvent {
-  /** prompt_received | prompt_ok | prompt_error | server_start | db_connect | db_error */
+  /**
+   * prompt_received | prompt_ok | prompt_error | chart_ok (spec-17 C)
+   * | server_start | data_dir_ok | data_dir_error | db_connect | db_error
+   */
   event: string;
   level?: LogLevel;
   query?: string;
@@ -24,6 +27,10 @@ export interface LogEvent {
   detail?: string;
   chartTypes?: string[];
   chartCount?: number;
+  /** spec-17 C: catalog metrics behind a chart, for per-widget runtime analysis. */
+  metrics?: string[];
+  /** spec-17 C: the requested range, e.g. "-365d→now". */
+  range?: string;
   durationMs?: number;
   bucket?: string;
 }
@@ -39,6 +46,8 @@ export function consoleLine(e: LogEvent): string {
       return `[prompt] ok${q} · ${(e.chartTypes ?? []).join(",")}${d}`;
     case "prompt_error":
       return `[prompt] error${q} · ${e.reason ?? ""}${d}${e.detail ? ` · ${e.detail}` : ""}`;
+    case "chart_ok":
+      return `[chart] ok${q} · ${(e.chartTypes ?? []).join(",")}${e.range ? ` · ${e.range}` : ""}${d}`;
     case "server_start":
       return `[server] start`;
     case "db_connect":

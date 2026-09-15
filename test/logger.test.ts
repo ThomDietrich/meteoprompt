@@ -21,6 +21,18 @@ describe("consoleLine (spec-15 event rendering)", () => {
     ).toBe('[prompt] error · "x" · timeout · deadline');
   });
 
+  it("renders a chart render with its type, range and duration (spec-17 C)", () => {
+    expect(
+      consoleLine({
+        event: "chart_ok",
+        query: "Tagesregen (30 Tage)",
+        chartTypes: ["bars"],
+        range: "-30d→now",
+        durationMs: 1840,
+      }),
+    ).toBe('[chart] ok · "Tagesregen (30 Tage)" · bars · -30d→now · 1840ms');
+  });
+
   it("renders server + db lifecycle events", () => {
     expect(consoleLine({ event: "server_start" })).toBe("[server] start");
     expect(consoleLine({ event: "db_connect", bucket: "weather" })).toBe(

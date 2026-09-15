@@ -55,7 +55,7 @@ export async function POST(request: Request) {
         error.reason === "out_of_scope"
           ? "Dazu habe ich keine Daten — ich kenne nur die Historie der eigenen Wetterstation (keine Vorhersage, kein Radar, keine Fremddaten)."
           : "Konnte die Anfrage nicht zuordnen — bitte präzisieren (z. B. „Außentemperatur der letzten 7 Tage“).";
-      await logFailedQuery({ query: q, reason: error.reason, detail, route: "/api/ask" });
+      await logFailedQuery({ query: q, reason: error.reason, detail, route: "/api/ask", durationMs: Date.now() - started });
       return NextResponse.json(
         { error: "unmappable_query", reason: error.reason, detail },
         { status: 422 },
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
     const message = error instanceof Error ? error.message : "Unknown LLM error";
     const status = /Missing ANTHROPIC_API_KEY/.test(message) ? 503 : 500;
     console.error("[api/ask] LLM step failed:", message);
-    await logFailedQuery({ query: q, reason: "llm_error", detail: message, route: "/api/ask" });
+    await logFailedQuery({ query: q, reason: "llm_error", detail: message, route: "/api/ask", durationMs: Date.now() - started });
     return NextResponse.json(
       { error: "llm_error", detail: message },
       { status },
@@ -107,7 +107,7 @@ export async function POST(request: Request) {
 
     // Claude chose a chart type its data shape can't satisfy → clean 422 (no crash).
     if (error instanceof ChartShapeError) {
-      await logFailedQuery({ query: q, reason: "chart_shape", detail: message, route: "/api/ask" });
+      await logFailedQuery({ query: q, reason: "chart_shape", detail: message, route: "/api/ask", durationMs: Date.now() - started });
       return NextResponse.json(
         {
           error: "chart_shape",
@@ -121,7 +121,7 @@ export async function POST(request: Request) {
     const { category, httpStatus, detail } = categorizeDataError(error);
     console.error(`[api/ask] data step failed (${category}):`, message);
     // Log the raw cause + the category so failed-queries.jsonl is analysable.
-    await logFailedQuery({ query: q, reason: category, detail: message, route: "/api/ask" });
+    await logFailedQuery({ query: q, reason: category, detail: message, route: "/api/ask", durationMs: Date.now() - started });
     return NextResponse.json(
       { error: "data_error", category, detail },
       { status: httpStatus },

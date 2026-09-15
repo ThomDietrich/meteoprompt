@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { ChartShapeError, resolveChart } from "@/lib/flux";
+import { logEvent } from "@/lib/logger";
 import { categorizeDataError } from "@/lib/query-error";
 import { logFailedQuery } from "@/lib/query-log";
 import { generateSummary } from "@/lib/summary";
@@ -30,6 +31,10 @@ function isChartSpecShape(v: unknown): v is ChartSpec {
 }
 
 export async function POST(request: Request) {
+  // spec-17 C: every chart request is timed. Production had no runtime data at all
+  // for /api/chart — only the failures — so the chronic widget timeouts could not
+  // be diagnosed. Measure first, optimise second.
+  const started = Date.now();
   let spec: ChartSpec;
   let originQuery: string | undefined;
   try {
@@ -66,6 +71,17 @@ export async function POST(request: Request) {
     const summary = originQuery
       ? await generateSummary(spec, series, originQuery, answer)
       : undefined;
+    logEvent({
+      event: "chart_ok",
+      query: spec.title,
+      route: "/api/chart",
+      chartTypes: [spec.chart],
+      metrics: spec.series.flatMap((s) =>
+        s.source.kind === "metric" ? [s.source.metric] : [],
+      ),
+      range: `${spec.timeRange.start}→${spec.timeRange.stop ?? "now"}`,
+      durationMs: Date.now() - started,
+    });
     const payload: ChartResponse = {
       spec,
       series,
@@ -85,7 +101,7 @@ export async function POST(request: Request) {
       error instanceof ChartShapeError ||
       /unknown metric|unsupported source/i.test(message)
     ) {
-      await logFailedQuery({ query: spec.title, reason: "invalid_spec", detail: message, route: "/api/chart" });
+      await logFailedQuery({ query: spec.title, reason: "invalid_spec", detail: message, route: "/api/chart", durationMs: Date.now() - started });
       return NextResponse.json(
         { error: "invalid_spec", detail: message },
         { status: 400 },
@@ -94,7 +110,7 @@ export async function POST(request: Request) {
     // Interpret the data error (timeout / config / generic) → actionable German.
     const { category, httpStatus, detail } = categorizeDataError(error);
     console.error(`[api/chart] query failed (${category}):`, message);
-    await logFailedQuery({ query: spec.title, reason: category, detail: message, route: "/api/chart" });
+    await logFailedQuery({ query: spec.title, reason: category, detail: message, route: "/api/chart", durationMs: Date.now() - started });
     return NextResponse.json(
       { error: "data_error", category, detail },
       { status: httpStatus },

@@ -15,6 +15,7 @@ export interface FailedQueryRecord {
   reason: string; // out_of_scope | unmappable | chart_shape | timeout | config | server_error | llm_error | invalid_spec
   detail?: string;
   route: string; // "/api/ask" | "/api/chart"
+  durationMs?: number; // spec-17 C: how long the request ran before it failed
 }
 
 export function logFailedQuery(rec: FailedQueryRecord): void {
