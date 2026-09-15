@@ -13,9 +13,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { fetchChart } from "@/lib/chart-fetch";
 import { downloadSeriesCsv } from "@/lib/csv";
 import type {
-  ChartResponse,
   ChartSpec,
   ResolvedAnswer,
   ResolvedSeries,
@@ -82,25 +82,9 @@ export function ChartCard({
 
     async function load() {
       try {
-        const res = await fetch("/api/chart", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          // Pass originQuery only for NL cards → route (re)generates the summary.
-          body: JSON.stringify(
-            hasQuery ? { spec, originQuery } : { spec },
-          ),
-        });
-        if (!res.ok) {
-          let detail = `HTTP ${res.status}`;
-          try {
-            const body = (await res.json()) as { detail?: string };
-            if (body?.detail) detail = body.detail;
-          } catch {
-            // Non-JSON error body — keep the status-code message.
-          }
-          throw new Error(detail);
-        }
-        const data = (await res.json()) as ChartResponse;
+        // spec-17 D: goes through the shared breaker (see lib/chart-fetch).
+        // originQuery only for NL cards → route (re)generates the summary.
+        const data = await fetchChart(hasQuery ? { spec, originQuery } : { spec });
         if (!cancelled)
           setState({
             status: "ready",

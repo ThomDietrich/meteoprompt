@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { createBreaker } from "@/lib/breaker";
 import { ChartShapeError, resolveChart } from "@/lib/flux";
 import { logEvent } from "@/lib/logger";
 import { categorizeDataError } from "@/lib/query-error";
@@ -14,6 +15,18 @@ import type { ChartResponse, ChartSpec } from "@/lib/query-spec";
 // Permanent/pinned cards without an originQuery stay LLM-free.
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+/**
+ * spec-17 D: ONE breaker per server process — shared by every card and every page
+ * load. A per-tab client breaker cannot help here: all ~22 cards mount at the same
+ * instant (so none of them has an answer yet) and its state is gone on reload.
+ * While this one is open, chart requests fail immediately instead of each waiting
+ * out the InfluxDB timeout.
+ */
+const dbBreaker = createBreaker({ threshold: 3, cooldownMs: 30_000 });
+
+const BREAKER_DETAIL =
+  "Die Datenbank ist gerade nicht erreichbar. Bitte in einer Minute erneut versuchen.";
 
 /** Minimal structural check so a malformed persisted spec yields 400, not 500. */
 function isChartSpecShape(v: unknown): v is ChartSpec {
@@ -60,6 +73,19 @@ export async function POST(request: Request) {
     );
   }
 
+  if (dbBreaker.isOpen()) {
+    logEvent({
+      event: "chart_blocked",
+      query: spec.title,
+      route: "/api/chart",
+      durationMs: Date.now() - started,
+    });
+    return NextResponse.json(
+      { error: "data_error", category: "server_error", detail: BREAKER_DETAIL },
+      { status: 503 },
+    );
+  }
+
   try {
     // resolveChart throws on unknown metric keys / unsupported source kinds
     // (ChartShapeError) or an unsatisfiable chart/data-shape combination. For
@@ -71,6 +97,7 @@ export async function POST(request: Request) {
     const summary = originQuery
       ? await generateSummary(spec, series, originQuery, answer)
       : undefined;
+    dbBreaker.recordSuccess();
     logEvent({
       event: "chart_ok",
       query: spec.title,
@@ -109,6 +136,8 @@ export async function POST(request: Request) {
     }
     // Interpret the data error (timeout / config / generic) → actionable German.
     const { category, httpStatus, detail } = categorizeDataError(error);
+    // Only a backend failure trips the breaker; a bad spec returned 400 above.
+    dbBreaker.recordFailure();
     console.error(`[api/chart] query failed (${category}):`, message);
     await logFailedQuery({ query: spec.title, reason: category, detail: message, route: "/api/chart", durationMs: Date.now() - started });
     return NextResponse.json(

@@ -11,7 +11,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { PERMANENT_GROUPS } from "@/lib/permanent-dashboard";
-import type { ChartResponse, ChartSpec, ResolvedSeries } from "@/lib/query-spec";
+import { fetchChart } from "@/lib/chart-fetch";
+import type { ChartSpec, ResolvedSeries } from "@/lib/query-spec";
 
 /**
  * Permanent "Stations-Dashboard" (spec-07): the 16 predefined charts grouped into
@@ -44,22 +45,8 @@ function PermanentChart({ spec }: { spec: ChartSpec }) {
 
     async function load() {
       try {
-        const res = await fetch("/api/chart", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ spec }),
-        });
-        if (!res.ok) {
-          let detail = `HTTP ${res.status}`;
-          try {
-            const body = (await res.json()) as { detail?: string };
-            if (body?.detail) detail = body.detail;
-          } catch {
-            // keep status message
-          }
-          throw new Error(detail);
-        }
-        const data = (await res.json()) as ChartResponse;
+        // spec-17 D: goes through the shared breaker (see lib/chart-fetch).
+        const data = await fetchChart({ spec });
         if (!cancelled) setState({ status: "ready", series: data.series });
       } catch (e) {
         if (!cancelled) {
