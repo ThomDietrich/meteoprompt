@@ -30,6 +30,19 @@ async function ensureDir(): Promise<void> {
   await fs.mkdir(DATA_DIR, { recursive: true });
 }
 
+/**
+ * spec-17 B: verify the data directory is actually writable, by doing what the app
+ * does — create it, write a file, remove it again. The pin/log writes failed silently
+ * for two months because nothing ever checked. Throws the underlying error (EACCES,
+ * EROFS, ENOSPC …) so the caller can log it.
+ */
+export async function assertWritable(): Promise<void> {
+  await ensureDir();
+  const probe = dataPath(`.write-probe.${process.pid}`);
+  await fs.writeFile(probe, "ok", "utf8");
+  await fs.unlink(probe);
+}
+
 /** Read + parse a JSON file. Returns `fallback` if missing/empty/corrupt. */
 export async function readJson<T>(filename: string, fallback: T): Promise<T> {
   try {

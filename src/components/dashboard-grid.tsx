@@ -195,13 +195,28 @@ export default function DashboardGrid() {
   const refreshPinned = useCallback(async () => {
     try {
       const res = await fetch("/api/pinned");
-      if (!res.ok) return;
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`;
+        try {
+          const body = (await res.json()) as { detail?: string };
+          if (body?.detail) detail = body.detail;
+        } catch {
+          // Non-JSON error body — keep the status-code message.
+        }
+        throw new Error(detail);
+      }
       const data = (await res.json()) as { cards?: PinnedCard[] };
       // Suppress the onLayoutChange this setState will provoke (programmatic).
       beginPinnedMutation();
       setPinnedCards(Array.isArray(data.cards) ? data.cards : []);
-    } catch {
-      // Network/store error → leave pins empty; non-fatal.
+    } catch (e) {
+      // spec-17 B: a failed read used to leave the grid silently empty, which looked
+      // exactly like "my pinned cards are gone". Name the failure instead.
+      setError(
+        e instanceof Error
+          ? `Angepinnte Karten konnten nicht geladen werden: ${e.message}`
+          : "Angepinnte Karten konnten nicht geladen werden",
+      );
     }
   }, [beginPinnedMutation]);
 
@@ -324,9 +339,19 @@ export default function DashboardGrid() {
           body: JSON.stringify({
             layouts: next.map((c) => ({ id: c.id, layout: c.layout })),
           }),
-        }).catch(() => {
-          /* best-effort: the rearrangement still shows locally this session */
-        });
+        })
+          .then((res) => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          })
+          .catch((e: unknown) => {
+            // spec-17 B: dropping this error lost the arrangement on the next load
+            // without anyone noticing.
+            setError(
+              e instanceof Error
+                ? `Anordnung konnte nicht gespeichert werden: ${e.message}`
+                : "Anordnung konnte nicht gespeichert werden",
+            );
+          });
         return next;
       });
     },

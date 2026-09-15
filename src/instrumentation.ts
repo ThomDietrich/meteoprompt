@@ -1,8 +1,9 @@
 /**
  * spec-15 — Next.js instrumentation hook: runs ONCE when the server boots
  * (runtime only; `next build` never calls it, so Gate A stays DB-free). Logs
- * `server_start` and probes InfluxDB reachability → `db_connect` / `db_error`,
- * so the log shows the app came up and whether the database is reachable.
+ * `server_start`, probes whether `data/` is writable → `data_dir_ok` / `data_dir_error`
+ * (spec-17 B), and probes InfluxDB reachability → `db_connect` / `db_error`, so the log
+ * shows the app came up and whether it can persist and reach the database.
  *
  * Everything is dynamically imported inside `register()` so the server-only
  * Influx client is never pulled into the build/edge graph.
@@ -12,6 +13,20 @@ export async function register() {
 
   const { logEvent } = await import("@/lib/logger");
   logEvent({ event: "server_start" });
+
+  // spec-17 B: pins and logs are written to data/; a non-writable mount used to fail
+  // silently. Say it loudly at boot instead of losing writes unnoticed.
+  try {
+    const { assertWritable } = await import("@/lib/store");
+    await assertWritable();
+    logEvent({ event: "data_dir_ok" });
+  } catch (error) {
+    logEvent({
+      level: "error",
+      event: "data_dir_error",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
 
   try {
     const { runFluxScalar, influxBucket } = await import("@/lib/influx");
