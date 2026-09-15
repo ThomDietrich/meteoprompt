@@ -3,6 +3,8 @@
 > **Richtung:** von MeteoPrompt (App/Agent) → an die Quelle (WeeWX + weewx-home-assistant-Extension).
 > **Zweck:** zusätzliche, an der Quelle vorberechnete Serien, die App-seitig entweder teuer,
 > unmöglich oder nur mit Umwegen zu bekommen sind. Stand **2026-07-06**.
+>
+> **Update 2026-09-16:** Die Temperatur-Tagesextrema (§1, §4) hat die App selbst zurückgerechnet — siehe dort.
 
 ## 0. Rahmen & Konventionen (damit es 1:1 in den Katalog passt)
 - **Präfix/entity_id:** `garten_ventus_w830_<slug>`, deutsche Slugs (wie der bestehende Feed).
@@ -42,6 +44,12 @@
 > backfillen (dann ein Slug, volle Historie), **oder (b)** separate `_hist`-Slugs wie oben. **Option
 > (a) bevorzugt** — ein Slug, klar. Bitte gib an, welche du wählst.
 
+> **Erledigt (2026-09-15, App-seitig):** Option (a) ist umgesetzt, allerdings nicht über WeeWX. Die App hat
+> `aussentemperatur_tagesmaximum/-minimum` für 2021-10-19 … 2026-07-04 aus der Rohserie `aussentemperatur`
+> zurückgerechnet und in dieselben Slugs geschrieben (spec-16); seit 2026-07-05 schreibt der HA-Sensor
+> weiter wie bisher. Für die Außentemperatur ist damit kein Quell-Backfill mehr nötig — die übrigen
+> Wünsche dieser Tabelle bleiben offen.
+
 **Alternative Umsetzung (falls HA-Sensoren mit Historie schwierig):** die Tages-Statistik direkt aus
 WeeWX **in InfluxDB** schreiben (eigene Measurement/entity_ids), einmalig backfillen + laufend
 fortschreiben. Für die App zählt nur: `garten_ventus_w830_<slug>`, `_field=="value"`, mit Historie.
@@ -72,7 +80,7 @@ Eines von beiden genügt. `sonnenscheindauer_moeglich_tag` ist am direktesten.
 | entity_id | Feld | Einheit | Semantik | Warum niedrig |
 |---|---|---|---|---|
 | `garten_ventus_w830_wasserbilanz_tag` | value | mm | Tages-Wasserbilanz (Regen − ET) | App rechnet `regen_tag` − `evapotranspiration_tag` selbst |
-| *Backfill* der neuen abgeleiteten Serien | — | — | `sonnenscheindauer_tag`, `trockenperiode`, `evapotranspiration_tag`, `aussentemperatur_tagesmaximum/-minimum` rückwirkend | gibt deren Charts sofort Tiefe statt „mitwachsen" |
+| *Backfill* der neuen abgeleiteten Serien | — | — | `sonnenscheindauer_tag`, `trockenperiode`, `evapotranspiration_tag` rückwirkend (`aussentemperatur_tagesmaximum/-minimum`: ✅ erledigt 2026-09-15, App-seitig) | gibt deren Charts sofort Tiefe statt „mitwachsen" |
 
 ## 5. Was die App parallel schon baut (kein Quell-Bedarf)
 P1 (läuft): Trockenperiode-KPI, Sonnenscheindauer-Karte + KPI, **Wasserbilanz-Chart** (aus
