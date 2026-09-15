@@ -52,11 +52,20 @@ export function influxBucket(): string {
   return readInfluxEnv().bucket;
 }
 
-/** HTTP request timeout for the InfluxDB client (ms). The library default is
- *  10 s; doubled to 20 s on request so very long ranges (e.g. the full ~5-year
- *  history) have more headroom. Resolution reduction (flux.ts tiered windows)
- *  remains the primary defence — this is just a larger safety margin. */
-const INFLUX_TIMEOUT_MS = 20_000;
+/**
+ * HTTP request timeout for the InfluxDB client (ms). The library default is 10 s;
+ * we ran 20 s, which produced the chronic "Request timed out" failures on the
+ * year-long dashboard widgets (spec-17 C). Raised to 45 s as a stop-gap until the
+ * per-request durations from /api/chart show where the time actually goes.
+ * Override per deployment with INFLUXDB_TIMEOUT_MS (ms) without a rebuild.
+ * Resolution reduction (flux.ts tiered windows) remains the primary defence.
+ */
+const DEFAULT_TIMEOUT_MS = 45_000;
+
+function influxTimeoutMs(): number {
+  const raw = Number(process.env.INFLUXDB_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_TIMEOUT_MS;
+}
 
 /** A query API bound to the configured org/token. Throws on missing config. */
 export function getQueryApi(): QueryApi {
@@ -64,7 +73,7 @@ export function getQueryApi(): QueryApi {
   return new InfluxDB({
     url: env.url,
     token: env.token,
-    timeout: INFLUX_TIMEOUT_MS,
+    timeout: influxTimeoutMs(),
   }).getQueryApi(env.org);
 }
 

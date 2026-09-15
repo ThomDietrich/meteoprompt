@@ -253,6 +253,32 @@ const QUERY_SPEC_TOOL: Anthropic.Tool = {
 
 // ── System prompt (catalog + chart-selection rules) ─────────────────────────
 
+/** Europe/Berlin — the station's local time; every date the model sees is in it. */
+const TZ = "Europe/Berlin";
+
+/** First day with raw station data (spec-16). */
+const ARCHIVE_START = "19.10.2021";
+
+/**
+ * spec-17 A: the model has no clock. Without today's date it guessed whether a named
+ * period was past or future and rejected valid historical ranges — "Windgeschwindigkeit
+ * am 31.07.2026" was refused as out_of_scope on 2026-08-16, while the same prompt
+ * succeeds once the date is known. State the day and the rule explicitly.
+ */
+export function todayHint(now: Date): string {
+  const today = now.toLocaleDateString("de-DE", {
+    timeZone: TZ,
+    weekday: "long",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+  return `HEUTE ist ${today} (Ortszeit ${TZ}). Die Stationshistorie reicht von ${ARCHIVE_START} bis heute.
+Alles bis einschließlich heute ist VERGANGENHEIT und damit beantwortbar — auch ein Datum von gestern, vom
+Monatsende oder aus dem laufenden Monat. NUR ein Zeitraum, der VOLLSTÄNDIG in der ZUKUNFT liegt, ist
+"out_of_scope". Relative Angaben („dieser Monat", „dieses Jahr", „letzte Woche") immer gegen HEUTE auflösen.`;
+}
+
 /**
  * spec-16: history marker for a catalog line, e.g.
  * " | ⚠ Daten erst ab 2026-07-05 → davor: outdoor_temp_daily_max (max/1d)".
@@ -307,6 +333,8 @@ SMART-VARIETY (Diagrammwahl):
   → window "1mo"). Sonst IMMER ein Diagramm bevorzugen — niemals zufällig "table" über Smart-Variety.
   Setze für wenige Werte ein passendes window (z. B. "1d"/"1mo"), damit die Tabelle wenige Zeilen hat.
 ${nudge}
+${todayHint(new Date())}
+
 ZEITRÄUME: relative Flux-Dauern wie -7d, -28d, -1d, -3d; stop üblicherweise 'now'. Absolute ISO-Zeiten
 für konkrete Monate/Jahre (z. B. Juni 2025: start "2025-06-01T00:00:00Z", stop "2025-07-01T00:00:00Z").
 HISTORIE: Metriken mit „⚠ Daten erst ab <Datum>“ haben davor KEINE Daten. Reicht der Zeitraum vor dieses Datum
@@ -338,7 +366,8 @@ INTELLIGENZ — diese Fragen JETZT BEANTWORTEN (reason "ok", NICHT ablehnen):
 KLASSIFIZIERUNG (Feld "reason", IMMER setzen):
 - "ok": alles aus der eigenen Stationshistorie beantwortbar (inkl. Rekord/Aggregat/Count/Vergleich/Gradtage).
 - "out_of_scope": Vorhersage, Radar, Unwetterwarnung oder Fremddaten — wir haben NUR die eigene
-  Stationshistorie (vergangene Messwerte). → LEERES "charts"-Array.
+  Stationshistorie (vergangene Messwerte). → LEERES "charts"-Array. Ein Datum oder Zeitraum in der
+  VERGANGENHEIT ist NIE out_of_scope, egal wie weit er zurückliegt (siehe HEUTE oben).
 - "unmappable": Kauderwelsch, off-topic oder keine passende Katalog-Metrik. → LEERES "charts"-Array.
 
 Bei "out_of_scope"/"unmappable" KEINE Default-Metrik erfinden. Wähle prägnante deutsche Titel + Labels
