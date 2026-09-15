@@ -75,7 +75,7 @@ export async function POST(request: Request) {
   try {
     const results: ChartResult[] = await Promise.all(
       charts.map(async (spec) => {
-        const { series, answer } = await resolveChart(spec);
+        const { series, answer, notice } = await resolveChart(spec);
         // spec-06 A) data-grounded narrative for this NL card (best-effort:
         // generateSummary never throws → data still returns if the LLM hiccups).
         const summary = await generateSummary(spec, series, q, answer);
@@ -84,6 +84,7 @@ export async function POST(request: Request) {
           series,
           ...(answer ? { answer } : {}),
           ...(summary ? { summary } : {}),
+          ...(notice ? { notice } : {}),
         };
       }),
     );

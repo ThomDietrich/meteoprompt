@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     // resolveChart throws on unknown metric keys / unsupported source kinds
     // (ChartShapeError) or an unsatisfiable chart/data-shape combination. For
     // extreme-line specs it resolves the series + answer in a single scan.
-    const { series, answer } = await resolveChart(spec);
+    const { series, answer, notice } = await resolveChart(spec);
     // spec-06: regenerate the data-grounded summary for NL cards only (those
     // with an originQuery) so the text is always current to the data. Best-
     // effort — generateSummary never throws.
@@ -71,6 +71,7 @@ export async function POST(request: Request) {
       series,
       ...(answer ? { answer } : {}),
       ...(summary ? { summary } : {}),
+      ...(notice ? { notice } : {}),
     };
     return NextResponse.json(payload, {
       headers: { "Cache-Control": "no-store" },

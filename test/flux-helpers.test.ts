@@ -6,6 +6,7 @@ import {
   dayKey,
   dayLengthHours,
   durationMs,
+  extremeWindow,
   rangeSpanMs,
   sanitizeRangeToken,
   sanitizeWindow,
@@ -84,5 +85,22 @@ describe("dayKey (Europe/Berlin calendar day)", () => {
   it("shifts a late-evening UTC instant into the next Berlin day", () => {
     // 22:30Z in July (CEST, +2h) → 00:30 the next local day.
     expect(dayKey("2026-07-05T22:30:00Z")).toBe("2026-07-06");
+  });
+});
+
+describe("extremeWindow", () => {
+  it("scales the envelope with the range", () => {
+    expect(extremeWindow(durationMs("1d"))).toBe("15m");
+    expect(extremeWindow(durationMs("7d"))).toBe("1h");
+    expect(extremeWindow(durationMs("60d"))).toBe("6h");
+    expect(extremeWindow(durationMs("365d"))).toBe("1d");
+    expect(extremeWindow(durationMs("1000d"))).toBe("3d");
+    expect(extremeWindow(null)).toBe("1d");
+  });
+
+  it("never goes below 1d for daily-grain series", () => {
+    expect(extremeWindow(durationMs("7d"), true)).toBe("1d");
+    expect(extremeWindow(durationMs("60d"), true)).toBe("1d");
+    expect(extremeWindow(durationMs("1000d"), true)).toBe("3d");
   });
 });

@@ -155,6 +155,25 @@ export function adaptiveWindow(
 }
 
 /**
+ * Envelope window for an extreme answer over `span` ms: fine for short ranges, coarser for
+ * long ones so the series stays bounded. `dailyGrain` series (catalog defaultWindow ≥ 1d:
+ * calendar-day extremes, daily accumulators) hold a running value within the day, so their
+ * envelope never goes below 1d — a finer one would draw the intraday ramp (spec-16).
+ */
+export function extremeWindow(span: number | null, dailyGrain = false): string {
+  if (span == null) return "1d";
+  if (span <= 800 * MS.d) {
+    if (dailyGrain) return "1d";
+    if (span <= 2 * MS.d) return "15m";
+    if (span <= 14 * MS.d) return "1h";
+    if (span <= 90 * MS.d) return "6h";
+    return "1d"; // up to ~26 months → daily
+  }
+  if (span <= 3 * MS.y) return "3d";
+  return "7d"; // multi-year → weekly envelope (cheap aggregate)
+}
+
+/**
  * Every aggregate bucket is timestamped at its START (`_start`, spec-13).
  * `aggregateWindow` defaults to the bucket's `_stop` (the NEXT boundary), so on a
  * time axis a bar drifts one period to the RIGHT and reads as the following

@@ -286,6 +286,7 @@ export interface ChartResult {
   series: ResolvedSeries[];
   answer?: ResolvedAnswer;
   summary?: string; // spec-06: NL-card narrative (absent for permanent charts)
+  notice?: string; // spec-16: a series starts later than the range (or its equivalent is shown)
 }
 
 /** Response of POST /api/ask. */
@@ -300,6 +301,7 @@ export interface ChartResponse {
   series: ResolvedSeries[];
   answer?: ResolvedAnswer;
   summary?: string; // spec-06: regenerated per reload for NL cards
+  notice?: string; // spec-16: a series starts later than the range (or its equivalent is shown)
 }
 
 /** Layout box for a card in the grid. */

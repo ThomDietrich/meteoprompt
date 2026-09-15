@@ -13,6 +13,7 @@ import {
   runFluxPoints,
   runFluxScalar,
 } from "@/lib/influx";
+import { planHistory } from "@/lib/history";
 import { KENNWERTE, type KennwertValue } from "@/lib/kennwerte";
 import { groupShowers, SHOWER_MIT_HOURS } from "@/lib/shower";
 import {
@@ -36,6 +37,7 @@ import {
   dayKey,
   dayLengthHours,
   durationMs,
+  extremeWindow,
   MS,
   rangeSpanMs,
   sanitizeRangeToken,
@@ -253,8 +255,13 @@ export async function resolveChartSeries(
  * separately (in parallel). The routes call this instead of the two resolvers.
  */
 export async function resolveChart(
-  spec: ChartSpec,
-): Promise<{ series: ResolvedSeries[]; answer?: ResolvedAnswer }> {
+  requested: ChartSpec,
+): Promise<{ series: ResolvedSeries[]; answer?: ResolvedAnswer; notice?: string }> {
+  // spec-16: series that start after the requested range are swapped for their
+  // long-history equivalent (or noted) BEFORE any Flux runs. Callers keep returning the
+  // requested spec, so persisted cards stay unchanged.
+  const { spec, notice } = planHistory(requested);
+
   // Single-scan path: extreme answer on a single-metric line.
   if (
     spec.answer?.kind === "extreme" &&
@@ -272,7 +279,11 @@ export async function resolveChart(
         spec,
         spec.answer.mode,
       );
-      return { series: ensureChronological(spec, [series]), answer };
+      return {
+        series: ensureChronological(spec, [series]),
+        answer,
+        ...(notice ? { notice } : {}),
+      };
     }
   }
 
@@ -284,6 +295,7 @@ export async function resolveChart(
   return {
     series: ensureChronological(spec, series),
     ...(answer ? { answer } : {}),
+    ...(notice ? { notice } : {}),
   };
 }
 
@@ -315,17 +327,6 @@ async function resolveExtremeContext(
 ): Promise<ResolvedSeries[]> {
   const points = await extremeEnvelope(bucket, sc, spec, mode);
   return [points.series];
-}
-
-/** Pick the envelope window for an extreme answer over `span` ms. */
-function extremeWindow(span: number | null): string {
-  if (span == null) return "1d";
-  if (span <= 2 * MS.d) return "15m";
-  if (span <= 14 * MS.d) return "1h";
-  if (span <= 90 * MS.d) return "6h";
-  if (span <= 800 * MS.d) return "1d"; // up to ~26 months → daily
-  if (span <= 3 * MS.y) return "3d";
-  return "7d"; // multi-year → weekly envelope (cheap aggregate)
 }
 
 /**
@@ -373,21 +374,24 @@ async function extremeEnvelope(
   mode: "min" | "max",
 ): Promise<{ series: ResolvedSeries; answer: ResolvedAnswer }> {
   const span = rangeSpanMs(spec.timeRange);
-  const base = extremeWindow(span);
+  // Daily-grain series keep a daily envelope (see extremeWindow in flux-helpers).
+  const base = extremeWindow(span, (durationMs(sc.cat.defaultWindow) ?? 0) >= MS.d);
   // The actual envelope window after adaptiveWindow may be coarser than `base`.
   const effective = adaptiveWindow(spec.timeRange, sanitizeWindow(base, "1d"));
   const windowMs = durationMs(effective) ?? MS.d;
-  // For coarse (≥1d) envelopes use cheap UTC bucketing — local-time boundaries
-  // are immaterial to a daily/weekly trend and the TZ-aware aggregate is far
-  // slower over multi-year ranges. Sub-daily envelopes keep local time.
+  // For coarse (≥1d) envelopes over long ranges use cheap UTC bucketing — the TZ-aware
+  // aggregate is far slower over multi-year ranges. Up to 90 days keep local time: daily-
+  // grain series always get a 1d envelope there (spec-16), and a UTC day would shift
+  // readings from just after Berlin midnight into the previous day.
   const coarse = windowMs >= MS.d;
+  const localTz = !coarse || (span != null && span <= 90 * MS.d);
   const points = await windowedPoints(
     bucket,
     sc.cat,
     mode,
     base,
     spec.timeRange,
-    /* localTz */ !coarse,
+    localTz,
   );
 
   // The extreme bucket of the envelope (coarse to find the day/week).
