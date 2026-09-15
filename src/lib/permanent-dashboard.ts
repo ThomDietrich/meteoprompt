@@ -112,16 +112,16 @@ export const PERMANENT_GROUPS: PermanentGroup[] = [
       {
         spec: {
           id: "perm-tagesextrema",
-          title: "Tageshoch & -tief (30 Tage)",
+          title: "Tageshoch & -tief (12 Monate)",
           chart: "line",
-          timeRange: { start: "-30d", stop: "now" },
+          timeRange: { start: "-365d", stop: "now" },
           series: [
             s("perm-tagesextrema-s0", "Tageshoch", "outdoor_temp_daily_max", "max", "1d", { color: ACCENT }),
             s("perm-tagesextrema-s1", "Tagestief", "outdoor_temp_daily_min", "min", "1d", { color: BLUE_LIGHT }),
           ],
         },
         caption:
-          "Kalendertag-Höchst- und Tiefsttemperatur — die Spanne zeigt, wie stark Tag und Nacht auseinanderliegen. Neue Serie ab Juli 2026 (wächst mit).",
+          "Kalendertag-Höchst- und Tiefsttemperatur über zwölf Monate — die Spanne zeigt, wie stark Tag und Nacht auseinanderliegen, der Verlauf den Jahresgang.",
       },
     ],
   },
