@@ -43,6 +43,7 @@ type LoadState =
       series: ResolvedSeries[];
       answer?: ResolvedAnswer;
       summary?: string;
+      notice?: string;
     };
 
 export function ChartCard({
@@ -106,6 +107,7 @@ export function ChartCard({
             series: data.series,
             answer: data.answer,
             summary: data.summary,
+            notice: data.notice,
           });
       } catch (error) {
         if (!cancelled) {
@@ -319,6 +321,14 @@ export function ChartCard({
             {state.status === "ready" && !isEmpty &&
               renderChart(spec, state.series, chartRef, state.answer)}
           </div>
+
+          {/* spec-16: a series starts later than the range (or its long-history
+              equivalent is shown) — say so instead of a silently shorter or empty chart. */}
+          {state.status === "ready" && state.notice && (
+            <p className="mt-2 shrink-0 text-xs leading-snug text-amber-700 dark:text-amber-400">
+              {state.notice}
+            </p>
+          )}
 
           {/* spec-06 A) data-grounded narrative UNDER the chart — NL cards only.
               While loading, a small shimmer stands in (data renders first). */}

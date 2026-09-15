@@ -2,7 +2,7 @@ import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
 
-import { CATALOG, getByKey } from "@/lib/catalog";
+import { CATALOG, getByKey, type CatalogEntry } from "@/lib/catalog";
 import { CHART_CATALOG } from "@/lib/chart-catalog";
 import { MODEL } from "@/lib/claude-runtime";
 import {
@@ -253,10 +253,20 @@ const QUERY_SPEC_TOOL: Anthropic.Tool = {
 
 // ── System prompt (catalog + chart-selection rules) ─────────────────────────
 
+/**
+ * spec-16: history marker for a catalog line, e.g.
+ * " | ⚠ Daten erst ab 2026-07-05 → davor: outdoor_temp_daily_max (max/1d)".
+ */
+function historyMark(e: CatalogEntry): string {
+  if (!e.historyFrom) return "";
+  const fb = e.historyFallback;
+  return ` | ⚠ Daten erst ab ${e.historyFrom}${fb ? ` → davor: ${fb.metric} (${fb.aggregation}/${fb.window})` : ""}`;
+}
+
 function buildSystemPrompt(currentChart?: string): string {
   const lines = CATALOG.map(
     (e) =>
-      `- ${e.key} | ${e.labelDe} | ${e.unit} | def: ${e.defaultAggregation}/${e.defaultWindow} ${e.defaultChart}${e.rainCounter ? " | ⚑ accumulator" : ""} | synonyms: ${e.synonyms.join(", ")}`,
+      `- ${e.key} | ${e.labelDe} | ${e.unit} | def: ${e.defaultAggregation}/${e.defaultWindow} ${e.defaultChart}${e.rainCounter ? " | ⚑ accumulator" : ""}${historyMark(e)} | synonyms: ${e.synonyms.join(", ")}`,
   ).join("\n");
 
   const chartLines = CHART_CATALOG.map(
@@ -270,7 +280,7 @@ function buildSystemPrompt(currentChart?: string): string {
   return `Du bist ein Assistent, der natürlichsprachige Wetter-Anfragen in eine strukturierte Abfrage übersetzt.
 Du MUSST das Tool "${TOOL_NAME}" aufrufen und ausschließlich Metriken aus dem folgenden Katalog verwenden.
 
-KATALOG (key | Label | Einheit | Default-Aggregation/Fenster Default-Diagramm | Synonyme):
+KATALOG (key | Label | Einheit | Default-Aggregation/Fenster Default-Diagramm | [⚑ Akkumulator] | [⚠ Historie] | Synonyme):
 ${lines}
 
 DIAGRAMMTYPEN (chart [Datenform-Anforderung]: Eignung):
@@ -299,6 +309,11 @@ SMART-VARIETY (Diagrammwahl):
 ${nudge}
 ZEITRÄUME: relative Flux-Dauern wie -7d, -28d, -1d, -3d; stop üblicherweise 'now'. Absolute ISO-Zeiten
 für konkrete Monate/Jahre (z. B. Juni 2025: start "2025-06-01T00:00:00Z", stop "2025-07-01T00:00:00Z").
+HISTORIE: Metriken mit „⚠ Daten erst ab <Datum>“ haben davor KEINE Daten. Reicht der Zeitraum vor dieses Datum
+zurück, nimm die dort genannte Alternative („→ davor: key (aggregation/window)“), falls vorhanden — aber NUR mit
+genau dieser Lesart: Höchstwerte (max) auf dem Tagesmaximum, Tiefstwerte (min) auf dem Tagesminimum, Zählungen nur
+je Tag, Diagrammtyp line/bars/table. Sonst die Metrik trotzdem — die Karte weist die Lücke dann aus. Für Zeiträume
+ab dem Datum gilt die Metrik normal.
 
 INTELLIGENZ — diese Fragen JETZT BEANTWORTEN (reason "ok", NICHT ablehnen):
 - REKORD/EXTREM ("wann war es am kältesten/wärmsten", "höchster/niedrigster Wert", "Rekord", "an welchem
