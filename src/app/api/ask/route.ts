@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { deriveQuerySpec, UnmappableQueryError } from "@/lib/claude";
 import { ChartShapeError, resolveChart } from "@/lib/flux";
+import { checkQuery } from "@/lib/input-check";
 import { logEvent } from "@/lib/logger";
 import { categorizeDataError } from "@/lib/query-error";
 import { logFailedQuery } from "@/lib/query-log";
@@ -42,6 +43,23 @@ export async function POST(request: Request) {
   // Log every prompt at ingress (crash-safe) + start the duration clock (spec-15).
   const started = Date.now();
   logEvent({ event: "prompt_received", query: q, route: "/api/ask" });
+
+  // spec-17 E: a keyboard mash used to reach the model and be answered as a chart.
+  // Judge the input first — cheap, and it never costs an API call.
+  const verdict = checkQuery(q);
+  if (!verdict.ok) {
+    await logFailedQuery({
+      query: q,
+      reason: "gibberish",
+      detail: verdict.detail,
+      route: "/api/ask",
+      durationMs: Date.now() - started,
+    });
+    return NextResponse.json(
+      { error: "unmappable_query", reason: "unmappable", detail: verdict.detail },
+      { status: 422 },
+    );
+  }
 
   // 1) NL → validated QuerySpec via Claude tool-use.
   let charts;
